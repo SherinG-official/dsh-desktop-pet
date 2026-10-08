@@ -76,7 +76,7 @@ Host 插件在 Web 服务上注册一条 JSON 路由 `/dsh-desktop-pet`（`actio
 
 ```sh
 pnpm pack
-dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.0.tgz
+dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.1.tgz
 ```
 
 ⚠️ 用**目录路径**安装不会注册 bundle——必须是 tarball（或 npm / git 源）。装完要重启桌面端：bundle 插件和 `dsh.client` 客户端模块都在启动时扫描并加载。

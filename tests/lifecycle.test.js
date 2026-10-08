@@ -4,6 +4,8 @@ import {
   name,
   Config,
   apply,
+  busyCommand,
+  createBusyRelay,
   parsePetStatus,
   resolveCommand,
   resolveArgs,
@@ -24,6 +26,7 @@ function fakeCtx(services = {}) {
   const injected = []
   const routes = []
   const disposers = []
+  const listeners = new Map()
 
   // The sub-scope a `ctx.inject` callback receives runs its effects the way the
   // real context does — immediately, collecting the disposer — because that is
@@ -43,6 +46,11 @@ function fakeCtx(services = {}) {
     injected,
     routes,
     disposers,
+    listeners,
+    /** Deliver an engine event to whatever the plugin subscribed. */
+    emit(event, payload) {
+      for (const listener of listeners.get(event) ?? []) listener(payload)
+    },
     ctx: {
       effect(fn) {
         effects.push(fn)
@@ -52,6 +60,11 @@ function fakeCtx(services = {}) {
         injected.push(deps)
         if (deps.every((dep) => services[dep] !== undefined)) callback(scope, undefined)
         return () => {}
+      },
+      on(event, listener) {
+        if (!listeners.has(event)) listeners.set(event, new Set())
+        listeners.get(event).add(listener)
+        return () => listeners.get(event)?.delete(listener)
       },
       logger: () => ({
         info: (m) => logs.push(`info: ${m}`),
@@ -115,14 +128,18 @@ describe('plugin contract', () => {
     expect(() => Config({ restartDelayMs: 'not-a-number' })).toThrow()
   })
 
-  it('registers exactly one effect, and none at all when disabled', () => {
+  it('registers the window lifecycle and the busy relay, and only the relay when disabled', () => {
+    // Two effects now: owning the window process, and keeping its face in step
+    // with the engine. The relay is registered even with the pet switched off,
+    // because the control panel can start the window later and then the relay
+    // has to be listening already.
     const on = fakeCtx()
-    apply(on.ctx, runningChild({}))
-    expect(on.effects).toHaveLength(1)
+    apply(on.ctx, runningChild({}), { busySend: async () => null })
+    expect(on.effects).toHaveLength(2)
 
     const off = fakeCtx()
-    apply(off.ctx, Config({ enabled: false }))
-    expect(off.effects).toHaveLength(0)
+    apply(off.ctx, Config({ enabled: false }), { busySend: async () => null })
+    expect(off.effects).toHaveLength(1)
   })
 })
 
@@ -172,10 +189,94 @@ describe('control port replies', () => {
     expect(parsePetStatus('pet visible=0')).toEqual({ raw: 'pet visible=0', visible: false })
   })
 
+  it('reads the busy flag the window reports', () => {
+    expect(parsePetStatus('pet visible=1 launcher=0 scale=1 busy=1').busy).toBe(true)
+    expect(parsePetStatus('pet visible=1 busy=0').busy).toBe(false)
+    expect(parsePetStatus('pet visible=1').busy).toBeUndefined()
+  })
+
   it('rejects anything that is not a pet', () => {
     expect(parsePetStatus(null)).toBeNull()
     expect(parsePetStatus('')).toBeNull()
     expect(parsePetStatus('HTTP/1.1 404 Not Found')).toBeNull()
+  })
+})
+
+describe('busy relay', () => {
+  /** A recorder standing in for the window's control port. */
+  function recorder() {
+    const sent = []
+    return { sent, send: (line) => { sent.push(line) } }
+  }
+
+  it('maps the verdict onto the control line the window understands', () => {
+    expect(busyCommand(true)).toBe('busy:1')
+    expect(busyCommand(false)).toBe('busy:0')
+  })
+
+  it('reports the edges, not the events', () => {
+    // The engine emits one status event per agent. The face only cares whether
+    // *any* of them is running, so a second agent starting must not cost a line.
+    const { sent, send } = recorder()
+    const relay = createBusyRelay({ send })
+
+    expect(relay.isBusy()).toBe(false)
+    relay.note({ id: 'a' }, 'running')
+    expect(sent).toEqual(['busy:1'])
+    relay.note({ id: 'b' }, 'running')
+    expect(sent).toEqual(['busy:1'])
+    relay.note({ id: 'a' }, 'idle')
+    expect(sent).toEqual(['busy:1'])          // b is still running
+    expect(relay.isBusy()).toBe(true)
+    relay.note({ id: 'b' }, 'idle')
+    expect(sent).toEqual(['busy:1', 'busy:0'])
+    expect(relay.isBusy()).toBe(false)
+  })
+
+  it('forgets an agent that never reports idle', () => {
+    const { sent, send } = recorder()
+    const relay = createBusyRelay({ send })
+    relay.note({ id: 'a' }, 'running')
+    relay.forget({ id: 'a' })
+    expect(sent).toEqual(['busy:1', 'busy:0'])
+  })
+
+  it('re-states the verdict on a heartbeat, so a window started mid-turn hears it', async () => {
+    // The edge that started the turn is long gone by then, and the window has no
+    // way to ask: without the heartbeat a pet launched mid-turn stays idle.
+    const { sent, send } = recorder()
+    const relay = createBusyRelay({ send, heartbeatMs: 15 })
+    relay.note({ id: 'a' }, 'running')
+    relay.start()
+    await sleep(55)
+    relay.stop()
+
+    expect(sent.filter((line) => line === 'busy:1').length).toBeGreaterThan(1)
+    expect(sent[sent.length - 1]).toBe('busy:0')
+
+    // stop() must also stop the heartbeat, or a disposed plugin keeps talking
+    const settled = sent.length
+    await sleep(45)
+    expect(sent.length).toBe(settled)
+  })
+
+  it('subscribes to the engine and stands the window down when the plugin unloads', () => {
+    // Wired through apply() on purpose: the plugin's own subscription is what
+    // the engine has to reach, and unloading must not leave the pet chewing.
+    const sent = []
+    const { ctx, effects, listeners, emit } = fakeCtx()
+    apply(ctx, Config({ enabled: false }), { busySend: (line) => { sent.push(line) } })
+
+    // The relay's own effect is what subscribes; running it is what a real
+    // context does at registration time.
+    const dispose = effects[0]()
+    expect([...listeners.keys()].sort()).toEqual(['agent/disposed', 'agent/status'])
+    emit('agent/status', { agent: { id: 'a' }, status: 'running' })
+    expect(sent).toEqual(['busy:1'])
+
+    dispose()
+    expect(sent).toEqual(['busy:1', 'busy:0'])
+    expect(listeners.get('agent/status').size).toBe(0)
   })
 })
 

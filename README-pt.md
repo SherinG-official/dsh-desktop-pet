@@ -43,7 +43,7 @@ O tamanho e um escalonamento da janela inteira (`setZoomFactor`), ancorado no ce
 
 ```sh
 pnpm pack
-dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.0.tgz
+dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.1.tgz
 ```
 
 Instalar a partir de um **caminho de diretorio** nao registra o bundle: precisa ser um tarball (ou npm/git). Reinicie o aplicativo depois; tanto o bundle quanto o modulo `dsh.client` carregam na inicializacao. O host da janela e o `electron`, instalado como dependencia normal, e o portao de build do pnpm deve permiti-lo em `pnpm-workspace.yaml` (`allowBuilds: electron: true`).

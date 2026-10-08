@@ -76,7 +76,7 @@ State lives in `<DSH home>/desktop/pet-window.json`: position, visibility, scale
 
 ```sh
 pnpm pack
-dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.0.tgz
+dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.1.tgz
 ```
 
 Adding a **directory** path does not register the bundle — it must be a tarball (or an npm/git source). Restart the app afterwards: both the bundle plugin and the `dsh.client` module are scanned and loaded at start-up.

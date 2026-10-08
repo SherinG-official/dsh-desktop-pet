@@ -164,6 +164,48 @@ function setScale(value) {
 }
 
 // --------------------------------------------------------------------- state ---
+/**
+ * What the host plugin last told us about the agent, and when.
+ *
+ * The window cannot work this out on its own. Token metrics come from DSH's
+ * projection cache, and that cache is written at *step boundaries* — measured
+ * 5–11 s apart on a working turn, with stretches over 40 s during one long model
+ * call — so a freshness test on it reports "idle" through most of the time the
+ * agent is actually busy. The host plugin subscribes to the engine's own
+ * `agent/status` (the same source the harness UI's spinner uses) and pushes the
+ * verdict down the control port; this is where it lands.
+ *
+ * The host re-states the flag every 15 s, so a value that has gone quiet for
+ * longer than the TTL means the host is gone — plugin unloaded, desktop app
+ * closed — and the file heuristic takes over again. Without that, an unloaded
+ * plugin would leave the pet chewing forever.
+ */
+const HOST_BUSY_TTL_MS = 45_000;
+let hostBusy = false;
+let hostBusyAt = 0;
+
+/** True while the agent works: the host's verdict while it is talking, the file heuristic otherwise. */
+function busyNow() {
+  if (hostBusyAt > 0 && Date.now() - hostBusyAt < HOST_BUSY_TTL_MS) return hostBusy;
+  return metrics.isBusy();
+}
+
+/**
+ * Records the host's verdict. Returns true when the *effective* flag moved.
+ *
+ * The comparison is against `busyNow()`, not against the stored host value:
+ * while the host was quiet the file heuristic was speaking for the pet, so the
+ * first message from the host usually contradicts it — and a `busy:0` that
+ * happens to match a stale `hostBusy` still has to take the chewing away now
+ * rather than on the next 5 s poll.
+ */
+function setHostBusy(on) {
+  const before = busyNow();
+  hostBusy = on;
+  hostBusyAt = Date.now();
+  return before !== busyNow();
+}
+
 function snapshot() {
   const tokens = metrics.state;
   const money = balance.state;
@@ -182,7 +224,7 @@ function snapshot() {
       turns: tokens.turns,
       steps: tokens.steps,
       context: tokens.context,
-      busy: metrics.isBusy(),
+      busy: busyNow(),
     },
     balance: money,
     compact: {
@@ -635,7 +677,15 @@ function controlReply(command) {
   const [verb, argument] = command.split(/[\s:=]+/);
   switch (verb) {
     case 'status':
-      return `pet visible=${petIsVisible() ? 1 : 0} launcher=${launcherIsVisible() ? 1 : 0} scale=${scale}`;
+      return `pet visible=${petIsVisible() ? 1 : 0} launcher=${launcherIsVisible() ? 1 : 0} scale=${scale} busy=${busyNow() ? 1 : 0}`;
+    case 'busy': {
+      // The host's own verdict on whether the agent is working — authoritative
+      // while it keeps arriving. Pushing here is what makes the chewing start and
+      // stop on the turn's edges instead of on the next 5 s metrics poll.
+      const on = argument === '1' || argument === 'true' || argument === 'on';
+      if (setHostBusy(on)) push();
+      return `pet busy=${busyNow() ? 1 : 0}`;
+    }
     case 'show':   showPet(); return `pet visible=${petIsVisible() ? 1 : 0}`;
     case 'hide':   hidePet(); return `pet visible=${petIsVisible() ? 1 : 0}`;
     case 'snap':   snapToCorner(); return `pet visible=${petIsVisible() ? 1 : 0}`;

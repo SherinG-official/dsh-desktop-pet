@@ -160,7 +160,11 @@ class Metrics {
     }
     state.allTimeTokens = metricTotal(state.allTime);
     state.updatedAt = Date.now();
-    state.at = newest ? newest.entry.mtime : 0;
+    // Liveness is the newest *file*, not the newest file that carries usage: a
+    // brand-new session has no tokenUsage row for its first moments, and picking
+    // the newest usage-carrying file then handed "live" to a previous session
+    // whose mtime was long dead — so the pet read idle through a whole first turn.
+    state.at = files.length > 0 ? files[0].mtime : 0;
     this.state = state;
     return state;
   }
@@ -178,7 +182,15 @@ class Metrics {
     }
   }
 
-  /** True while the newest session file keeps growing (agent likely working). */
+  /**
+   * True while the newest session file keeps growing (agent likely working).
+   *
+   * This is a *fallback*: the projection cache is flushed at step boundaries, so
+   * a long model call writes nothing for up to ~40 s and this reads idle while
+   * the agent is working. The window prefers the host plugin's `agent/status`
+   * verdict and only falls back here when no host is talking to it (see
+   * `busyNow()` in pet.js).
+   */
   isBusy() {
     return this.state.at > 0 && Date.now() - this.state.at < 4000;
   }

@@ -173,6 +173,11 @@ body.dragging .bubble { transition: none; }
 /* the badge only stands in when the bubble is not on screen */
 body.show-bubble .badge { display: none; }
 
+/* `[hidden]` has to be spelled out: the UA rule is a bare `display: none`, and
+   `.badge`'s own `display: inline-flex` outranks it — so the pill stayed painted
+   and read "工作中" over a pet that was doing nothing. */
+.badge[hidden] { display: none; }
+
 .badge i { font-style: normal; }
 .badge i::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
 

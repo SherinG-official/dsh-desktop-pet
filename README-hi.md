@@ -43,7 +43,7 @@ Size poore window ka scale hai (`setZoomFactor`), neeche-ke-chaukath par anchore
 
 ```sh
 pnpm pack
-dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.0.tgz
+dsh plugin --profile desktop add ./dsh-desktop-pet-0.3.1.tgz
 ```
 
 **Directory path** se install karne par bundle register nahi hota — tarball (ya npm/git) chahiye. Uske baad app restart karein; bundle aur `dsh.client` module dono startup par load hote hain. Window host `electron` hai, normal dependency ke roop me, aur pnpm ka build gate ise `pnpm-workspace.yaml` me allow karna hoga (`allowBuilds: electron: true`).
