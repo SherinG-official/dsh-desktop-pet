@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('dsh', {
   moveTo: (x, y) => ipcRenderer.invoke('pet:move-to', { x, y }),
   snap: () => ipcRenderer.invoke('pet:snap'),
   menu: () => ipcRenderer.invoke('pet:menu'),
+  // click-through: the renderer does the hit test, the main process holds the flag
+  setInteractive: (on) => ipcRenderer.invoke('pet:interactive', Boolean(on)),
 
   // the medallion window
   launcherDragBegin: () => ipcRenderer.invoke('launcher:drag-begin'),
@@ -35,10 +37,20 @@ contextBridge.exposeInMainWorld('dsh', {
   launcherFollow: () => ipcRenderer.invoke('launcher:follow'),
   launcherClamp: () => ipcRenderer.invoke('launcher:clamp'),
   launcherMenu: () => ipcRenderer.invoke('launcher:menu'),
+  launcherSetInteractive: (on) => ipcRenderer.invoke('launcher:interactive', Boolean(on)),
 
   onState: (handler) => {
     const listener = (_event, state) => handler(state);
     ipcRenderer.on('state:update', listener);
     return () => ipcRenderer.removeListener('state:update', listener);
+  },
+
+  // The main process polls the OS cursor (a window that ignores the mouse gets
+  // no pointer events at all) and asks the renderer, which holds the art and so
+  // owns the hit test. The handler's return value is the answer.
+  onHitTest: (handler) => {
+    const listener = (_event, point) => handler(point);
+    ipcRenderer.on('pet:hit-test', listener);
+    return () => ipcRenderer.removeListener('pet:hit-test', listener);
   },
 });

@@ -217,19 +217,24 @@ describe('busy relay', () => {
   it('reports the edges, not the events', () => {
     // The engine emits one status event per agent. The face only cares whether
     // *any* of them is running, so a second agent starting must not cost a line.
+    //
+    // Only the `busy:` lines are counted here: the relay also pushes the richer
+    // `state:` frame (see pet-state.test.js), and this test is about the old
+    // one-bit protocol a pre-0.4 window still speaks.
     const { sent, send } = recorder()
     const relay = createBusyRelay({ send })
+    const busy = () => sent.filter((line) => line.startsWith('busy:'))
 
     expect(relay.isBusy()).toBe(false)
     relay.note({ id: 'a' }, 'running')
-    expect(sent).toEqual(['busy:1'])
+    expect(busy()).toEqual(['busy:1'])
     relay.note({ id: 'b' }, 'running')
-    expect(sent).toEqual(['busy:1'])
+    expect(busy()).toEqual(['busy:1'])
     relay.note({ id: 'a' }, 'idle')
-    expect(sent).toEqual(['busy:1'])          // b is still running
+    expect(busy()).toEqual(['busy:1'])        // b is still running
     expect(relay.isBusy()).toBe(true)
     relay.note({ id: 'b' }, 'idle')
-    expect(sent).toEqual(['busy:1', 'busy:0'])
+    expect(busy()).toEqual(['busy:1', 'busy:0'])
     expect(relay.isBusy()).toBe(false)
   })
 
@@ -238,7 +243,7 @@ describe('busy relay', () => {
     const relay = createBusyRelay({ send })
     relay.note({ id: 'a' }, 'running')
     relay.forget({ id: 'a' })
-    expect(sent).toEqual(['busy:1', 'busy:0'])
+    expect(sent.filter((line) => line.startsWith('busy:'))).toEqual(['busy:1', 'busy:0'])
   })
 
   it('re-states the verdict on a heartbeat, so a window started mid-turn hears it', async () => {
@@ -251,8 +256,9 @@ describe('busy relay', () => {
     await sleep(55)
     relay.stop()
 
-    expect(sent.filter((line) => line === 'busy:1').length).toBeGreaterThan(1)
-    expect(sent[sent.length - 1]).toBe('busy:0')
+    const busy = sent.filter((line) => line.startsWith('busy:'))
+    expect(busy.filter((line) => line === 'busy:1').length).toBeGreaterThan(1)
+    expect(busy[busy.length - 1]).toBe('busy:0')
 
     // stop() must also stop the heartbeat, or a disposed plugin keeps talking
     const settled = sent.length
@@ -270,13 +276,20 @@ describe('busy relay', () => {
     // The relay's own effect is what subscribes; running it is what a real
     // context does at registration time.
     const dispose = effects[0]()
-    expect([...listeners.keys()].sort()).toEqual(['agent/disposed', 'agent/status'])
+    expect([...listeners.keys()].sort()).toEqual([
+      'agent/disposed',
+      'agent/error',
+      'agent/status',
+      'session/event',
+    ])
     emit('agent/status', { agent: { id: 'a' }, status: 'running' })
-    expect(sent).toEqual(['busy:1'])
+    expect(sent.filter((line) => line.startsWith('busy:'))).toEqual(['busy:1'])
 
     dispose()
-    expect(sent).toEqual(['busy:1', 'busy:0'])
+    const busy = sent.filter((line) => line.startsWith('busy:'))
+    expect(busy[busy.length - 1]).toBe('busy:0')
     expect(listeners.get('agent/status').size).toBe(0)
+    expect(listeners.get('session/event').size).toBe(0)
   })
 })
 

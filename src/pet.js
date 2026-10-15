@@ -55,6 +55,9 @@ const LAUNCHER_BASE = { width: 148, height: 176 };
 
 const STATE_FILE = path.join(util.dshHome(), 'desktop', 'pet-window.json');
 
+/** How often the cursor is sampled to decide whether the pet is under it. */
+const CURSOR_WATCH_MS = 60;
+
 let metrics;
 let balance;
 let petWindow = null;
@@ -63,6 +66,19 @@ let controlServer = null;
 
 /** Current zoom, shared by both windows. */
 let scale = 1;
+
+/**
+ * Whether the transparent parts of a window let clicks through to the desktop.
+ *
+ * On by default: the alternative is an invisible rectangle that eats clicks. It
+ * is a setting because click-through costs one thing — you cannot start a drag
+ * from a transparent pixel — so someone who prefers a forgiving grab area can
+ * turn it off and get the old whole-window behaviour.
+ */
+let clickThrough = true;
+
+/** Debug the hit test (payload in the log, renderer console forwarded). */
+const DEBUG_HIT = process.env.DSH_PET_DEBUG_HIT === '1';
 
 /**
  * Where inside each window the cursor grabbed it, in screen coordinates.
@@ -130,6 +146,105 @@ function applyZoom(win) {
 }
 
 /**
+ * Makes a window click-through unless the renderer has armed interactivity.
+ *
+ * A transparent, frameless, always-on-top window is a *mouse-enabled* rectangle
+ * by default: the art covers a fraction of it and the rest silently swallows
+ * clicks meant for whatever is underneath. That is the "dead zone" every desktop
+ * pet hits, and the fix is to start click-through and let the renderer turn
+ * interactivity back on only over solid pixels.
+ *
+ * `forward: true` is what makes that possible: it keeps `mousemove` flowing to
+ * the page even while the window is ignoring the mouse, so the renderer can
+ * notice the cursor arriving on the character and arm itself. Without it the
+ * window would never hear the cursor again and could not be clicked at all.
+ *
+ * Called on creation *and* after every move: an un-ignored window left behind by
+ * a snap or a re-home is the same bug class as an un-ignored window at startup.
+ */
+function applyClickThrough(win) {
+  if (!win || win.isDestroyed()) return;
+  if (!clickThrough) {
+    try { win.setIgnoreMouseEvents(false); } catch { /* ignore */ }
+    return;
+  }
+  try { win.setIgnoreMouseEvents(true, { forward: true }); } catch { /* older electron */ }
+}
+
+/**
+ * The renderer asks for the mouse back when the cursor is over the character,
+ * and gives it up again when it leaves. This is the only writer of that state
+ * besides applyClickThrough().
+ */
+function setInteractive(which, on) {
+  const win = windowOf(which);
+  if (!win || win.isDestroyed()) return false;
+  if (!clickThrough) return true;   // the whole window is always live
+  try {
+    win.setIgnoreMouseEvents(!on, { forward: true });
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Watches the cursor and tells each window whether it is over the character.
+ *
+ * This has to live in the main process. A window that is ignoring the mouse is
+ * sent no pointer events at all on Windows — measured on this machine: zero
+ * `pointermove` while click-through was on and eight with it off, over the same
+ * cursor sweep — so the renderer can never notice the cursor arriving and could
+ * never re-arm itself. `forward: true` does not change that here.
+ *
+ * The OS cursor position is available to the main process regardless, so the
+ * poll asks the renderer (which owns the art and therefore the hit test) where
+ * the cursor is, and the renderer flips the flag. Polling rather than listening
+ * because there is no event to listen to; 60 ms is fast enough that a click
+ * lands on the frame it was aimed at, and it is one syscall plus one tiny IPC
+ * message when the answer has not changed.
+ */
+function startCursorWatch() {
+  // Per window: one shared flag would let the pet's state clobber the
+  // medallion's, and the two are rarely in the same place.
+  const outside = { pet: null, launcher: null };
+  const watch = setInterval(() => {
+    for (const which of ['pet', 'launcher']) {
+      const win = windowOf(which);
+      if (!win || win.isDestroyed() || !win.isVisible()) continue;
+      let point;
+      try {
+        point = screen.getCursorScreenPoint();
+      } catch {
+        continue;
+      }
+      const bounds = win.getBounds();
+      // Off this window entirely: nobody needs the hit test, and telling the
+      // window so is what hands the desktop its clicks back.
+      const inside = point.x >= bounds.x && point.x < bounds.x + bounds.width
+        && point.y >= bounds.y && point.y < bounds.y + bounds.height;
+      if (!inside) {
+        if (outside[which] !== true) {
+          outside[which] = true;
+          setInteractive(which, false);
+        }
+        continue;
+      }
+      outside[which] = false;
+      // Window-relative CSS pixels: the renderer's own coordinate space.
+      try {
+        win.webContents.send('pet:hit-test', {
+          x: point.x - bounds.x,
+          y: point.y - bounds.y,
+        });
+      } catch { /* the renderer is not listening yet */ }
+    }
+  }, CURSOR_WATCH_MS);
+  if (typeof watch.unref === 'function') watch.unref();
+  return watch;
+}
+
+/**
  * Changes the zoom, keeping each window's bottom edge and horizontal centre
  * where they were — the mascot stands on the desktop, so its feet should not
  * jump when it grows.
@@ -153,7 +268,7 @@ function setScale(value) {
       height: size.height,
     };
     pinSize(win, size);
-    win.setBounds(target);
+    repositionWindow(win, target);
     writeState({ [key]: win.getBounds() });
     applyZoom(win);
   }
@@ -184,10 +299,37 @@ const HOST_BUSY_TTL_MS = 45_000;
 let hostBusy = false;
 let hostBusyAt = 0;
 
+/**
+ * The last full state frame the host sent, or null.
+ *
+ * 0.3.1 only ever learned a boolean. Now the host describes *what* the agent is
+ * doing — which of six states, which tool, how far into the turn — and the pet
+ * draws that directly. Kept verbatim rather than reinterpreted: the host owns
+ * the state machine (lib/pet-state.js) so that the rules live in one place and
+ * can be tested without a window.
+ */
+let hostState = null;
+let hostStateAt = 0;
+
 /** True while the agent works: the host's verdict while it is talking, the file heuristic otherwise. */
 function busyNow() {
   if (hostBusyAt > 0 && Date.now() - hostBusyAt < HOST_BUSY_TTL_MS) return hostBusy;
   return metrics.isBusy();
+}
+
+/**
+ * The state to draw, as one word.
+ *
+ * While the host is talking this is simply its answer. Once it has gone quiet
+ * (plugin unloaded, desktop app closed) the pet falls back to the one thing it
+ * can still observe for itself — whether the projection cache is moving — and so
+ * can only be idle or working: it cannot tell a finished turn from an aborted
+ * one by looking at a file's mtime, and it must not pretend to.
+ */
+function stateNow() {
+  const fresh = hostStateAt > 0 && Date.now() - hostStateAt < HOST_BUSY_TTL_MS;
+  if (fresh && hostState) return hostState.state;
+  return busyNow() ? 'working' : 'idle';
 }
 
 /**
@@ -204,6 +346,32 @@ function setHostBusy(on) {
   hostBusy = on;
   hostBusyAt = Date.now();
   return before !== busyNow();
+}
+
+/**
+ * Parses one `state:{...}` frame from the host.
+ *
+ * Returns false when the payload is not usable, and the caller answers with a
+ * refusal rather than pretending it applied. A malformed frame must never take
+ * the control server down: this runs inside a socket callback, and an exception
+ * there would kill the connection (or worse) while the pet keeps running with a
+ * stale face.
+ */
+function noteHostState(json) {
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.state !== 'string') return false;
+  hostState = parsed;
+  hostStateAt = Date.now();
+  // The state frame carries the busy flag too, so keep the older command's
+  // bookkeeping in step: a window that gets both must not oscillate.
+  hostBusy = Boolean(parsed.busy);
+  hostBusyAt = hostStateAt;
+  return true;
 }
 
 function snapshot() {
@@ -225,6 +393,13 @@ function snapshot() {
       steps: tokens.steps,
       context: tokens.context,
       busy: busyNow(),
+      // What the mascot is doing, and the one detail worth showing: the host
+      // decides both (see stateNow()).
+      state: stateNow(),
+      tool: hostState && hostStateAt > 0 && Date.now() - hostStateAt < HOST_BUSY_TTL_MS
+        ? hostState.tool
+        : null,
+      step: hostState ? hostState.step : null,
     },
     balance: money,
     compact: {
@@ -370,8 +545,22 @@ function createPetWindow() {
   try { petWindow.setAlwaysOnTop(true, 'screen-saver'); } catch { /* older electron */ }
   pinSize(petWindow, size);
   applyZoom(petWindow);
+  // Before it is ever shown: a window that is mouse-enabled even for a moment is
+  // a window that can eat a click.
+  applyClickThrough(petWindow);
 
-  petWindow.loadFile(path.join(ROOT, 'renderer', 'pet.html'));
+  petWindow.loadFile(path.join(ROOT, 'renderer', 'pet.html'), DEBUG_HIT
+    ? { query: { debughit: '1' } }
+    : undefined);
+  // The renderer's console is otherwise invisible: it goes to a devtools window
+  // nobody opened. Forward it when the hit test is being debugged.
+  if (DEBUG_HIT) {
+    petWindow.webContents.on('console-message', (_event, _level, message) => {
+      try { console.log(`[renderer] ${message}`); } catch { /* ignore */ }
+    });
+    // Proof that the forwarding path itself works, independent of the hit test.
+    console.log('[main] hit-test debugging enabled');
+  }
   petWindow.webContents.on('did-finish-load', () => {
     applyZoom(petWindow);
     push();
@@ -433,8 +622,16 @@ function createLauncherWindow() {
   try { launcherWindow.setAlwaysOnTop(true, 'screen-saver'); } catch { /* older electron */ }
   pinSize(launcherWindow, size);
   applyZoom(launcherWindow);
+  applyClickThrough(launcherWindow);
 
-  launcherWindow.loadFile(path.join(ROOT, 'renderer', 'launcher.html'));
+  launcherWindow.loadFile(path.join(ROOT, 'renderer', 'launcher.html'), DEBUG_HIT
+    ? { query: { debughit: '1' } }
+    : undefined);
+  if (DEBUG_HIT) {
+    launcherWindow.webContents.on('console-message', (_event, _level, message) => {
+      try { console.log(`[launcher] ${message}`); } catch { /* ignore */ }
+    });
+  }
   launcherWindow.webContents.on('did-finish-load', () => {
     applyZoom(launcherWindow);
     push();
@@ -485,7 +682,7 @@ function showLauncher() {
       width: size.width,
       height: size.height,
     };
-    win.setBounds(target);
+    repositionWindow(win, target);
     writeState({ launcherBounds: target });
   }
 
@@ -517,7 +714,7 @@ function showPet() {
       width: size.width,
       height: size.height,
     };
-    petWindow.setBounds(target);
+    repositionWindow(petWindow, target);
     writeState({ bounds: target });
   }
 
@@ -558,7 +755,7 @@ function snapToCorner() {
     width: size.width,
     height: size.height,
   };
-  petWindow.setBounds(target);
+  repositionWindow(petWindow, target);
   writeState({ bounds: target });
   showPet();
   return true;
@@ -588,6 +785,21 @@ function beginDrag(which) {
   return true;
 }
 
+/**
+ * Moves (and optionally resizes) a window, then re-asserts click-through.
+ *
+ * Every repositioning goes through here because moving a window is exactly when
+ * Windows can hand it back a mouse-enabled state — a re-home after a display
+ * change, a snap, a scale change. Doing it at the call sites was how the pet
+ * ended up with a click-eating rectangle on the secondary display.
+ */
+function repositionWindow(win, bounds) {
+  if (!win || win.isDestroyed()) return false;
+  win.setBounds(bounds);
+  applyClickThrough(win);
+  return true;
+}
+
 /** One frame of dragging: put the grabbed point back under the cursor. */
 function followCursor(which) {
   const win = windowOf(which);
@@ -598,6 +810,10 @@ function followCursor(which) {
   // Deliberately NOT clamped to the work area: clamping mid-drag stalls the
   // window at a screen edge while the cursor keeps going, which makes the
   // character slide out from under the pointer.
+  //
+  // No click-through re-assert here on purpose: a drag only starts from an armed
+  // window, and calling setIgnoreMouseEvents mid-gesture would drop the pointer
+  // capture and make the character fall out from under the cursor.
   win.setBounds({
     x: Math.round(point.x - grab.dx),
     y: Math.round(point.y - grab.dy),
@@ -634,7 +850,7 @@ function clampWindow(which) {
     width: size.width,
     height: size.height,
   };
-  win.setBounds(target);
+  repositionWindow(win, target);
   writeState({ [stateKeyOf(which)]: win.getBounds() });
   return target;
 }
@@ -654,7 +870,7 @@ function snapWindow(which) {
   };
   const same = bounds.x === target.x && bounds.y === target.y
     && bounds.width === target.width && bounds.height === target.height;
-  if (!same) win.setBounds(target);
+  if (!same) repositionWindow(win, target);
   writeState({ [stateKeyOf(which)]: target });
   return true;
 }
@@ -667,7 +883,7 @@ function moveWindowTo(which, point) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
   const size = sizeOf(which);
   // move WITH the size: Windows can resize a window it sees being repositioned
-  win.setBounds({ x: Math.round(x), y: Math.round(y), width: size.width, height: size.height });
+  repositionWindow(win, { x: Math.round(x), y: Math.round(y), width: size.width, height: size.height });
   return true;
 }
 
@@ -677,7 +893,15 @@ function controlReply(command) {
   const [verb, argument] = command.split(/[\s:=]+/);
   switch (verb) {
     case 'status':
-      return `pet visible=${petIsVisible() ? 1 : 0} launcher=${launcherIsVisible() ? 1 : 0} scale=${scale} busy=${busyNow() ? 1 : 0}`;
+      return `pet visible=${petIsVisible() ? 1 : 0} launcher=${launcherIsVisible() ? 1 : 0} scale=${scale} busy=${busyNow() ? 1 : 0} state=${stateNow()} clickthrough=${clickThrough ? 1 : 0}`;
+    case 'clickthrough': {
+      // Live toggle, so the click-through behaviour can be checked from a shell
+      // without editing config and restarting the desktop app.
+      clickThrough = argument !== '0';
+      applyClickThrough(petWindow);
+      applyClickThrough(launcherWindow);
+      return `pet clickthrough=${clickThrough ? 1 : 0}`;
+    }
     case 'busy': {
       // The host's own verdict on whether the agent is working — authoritative
       // while it keeps arriving. Pushing here is what makes the chewing start and
@@ -685,6 +909,14 @@ function controlReply(command) {
       const on = argument === '1' || argument === 'true' || argument === 'on';
       if (setHostBusy(on)) push();
       return `pet busy=${busyNow() ? 1 : 0}`;
+    }
+    case 'state': {
+      // The full frame: `state:{"state":"working","tool":{...},"step":2,...}`.
+      // The argument is the JSON after the first colon, so rejoin what the
+      // command splitter took apart.
+      if (!noteHostState(command.slice(verb.length + 1))) return 'pet state=stale';
+      push();
+      return `pet state=${stateNow()}`;
     }
     case 'show':   showPet(); return `pet visible=${petIsVisible() ? 1 : 0}`;
     case 'hide':   hidePet(); return `pet visible=${petIsVisible() ? 1 : 0}`;
@@ -820,7 +1052,11 @@ function registerIpc() {
     const dir = path.join(ROOT, 'assets', 'pet');
     const frames = {};
     let version = 0;
-    for (const name of ['base', 'chew', 'hover', 'mini']) {
+    // Every expression the state machine can ask for (see lib/pet-state.js's
+    // FACE_OF), plus `hover` for the cursor and `mini` for the page's button.
+    // Listed rather than globbed so a stray file in the art directory cannot
+    // become a reachable expression by accident.
+    for (const name of ['base', 'idle', 'busy', 'chew', 'hover', 'alert', 'mini']) {
       const file = path.join(dir, `${name}.png`);
       try {
         const buf = fs.readFileSync(file);
@@ -847,6 +1083,9 @@ function registerIpc() {
     ipcMain.handle(`${prefix}:clamp`, () => clampWindow(which));
     ipcMain.handle(`${prefix}:move-to`, (_event, point) => moveWindowTo(which, point));
     ipcMain.handle(`${prefix}:snap`, () => snapWindow(which));
+    // The renderer owns the hit test (it has the art), the main process owns the
+    // window flag. See applyClickThrough().
+    ipcMain.handle(`${prefix}:interactive`, (_event, on) => setInteractive(which, Boolean(on)));
   }
 
   ipcMain.handle('pet:menu', () => {
@@ -876,6 +1115,9 @@ function run() {
     }
 
     scale = resolveInitialScale();
+    // Plugin config wins over the default, but the pet's own saved state does not
+    // carry this one: a click-through preference is the plugin's to set.
+    clickThrough = process.env.DSH_PET_CLICK_THROUGH !== '0';
 
     metrics = new Metrics();
     metrics.refresh();
@@ -889,6 +1131,8 @@ function run() {
 
     const topGuard = setInterval(() => raiseWindows(), 20000);
     if (typeof topGuard.unref === 'function') topGuard.unref();
+
+    startCursorWatch();
 
     const poll = setInterval(() => {
       metrics.refresh();

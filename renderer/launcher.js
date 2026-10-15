@@ -69,6 +69,52 @@ function render(state) {
   }
 }
 
+// --------------------------------------------------------------- hit testing ---
+/**
+ * Is the cursor on the medallion?
+ *
+ * This window is 148x176 and the medallion is a circle inside it, so the test is
+ * geometry rather than art alpha: cheaper, and exact for a disc. The target is
+ * the *ring* — the outer circle the user sees — grown a few pixels, because a
+ * 49px-radius target is small enough that demanding pixel precision feels broken.
+ *
+ * The main process spawns this window click-through (see applyClickThrough in
+ * ../src/pet.js) and this is what decides when to take the mouse back.
+ */
+const RING_RADIUS = 54;      // SVG r=49 plus the stroke width
+const GRAB_PAD = 6;          // forgiving edge: a small round target needs it
+
+let armed = null;
+
+function hitsMedalAt(px, py) {
+  const medal = document.getElementById('medal');
+  if (!medal) return true;
+  const box = medal.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0) return true;
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  // The ring is drawn inside a 108-unit viewBox scaled to the medal box.
+  const scale = Math.min(box.width, box.height) / 108;
+  const radius = RING_RADIUS * scale + GRAB_PAD;
+  const dx = px - cx;
+  const dy = py - cy;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
+function setInteractive(on) {
+  if (on === armed) return;
+  armed = on;
+  if (DEBUG_HIT) {
+    try { console.log(`launcher hit ${on ? 'ON ' : 'off'}`); } catch { /* ignore */ }
+  }
+  call(api.launcherSetInteractive(on));
+}
+
+/** Debug the medallion's hit test (enable with DSH_PET_DEBUG_HIT=1). */
+const DEBUG_HIT = (() => {
+  try { return location.search.includes('debughit'); } catch { return false; }
+})();
+
 // ------------------------------------------------------------------ gestures --
 let dragging = false;
 let moved = 0;
@@ -134,6 +180,13 @@ document.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   call(api.launcherMenu());
 });
+
+// Click-through arming is driven entirely by the main process's cursor watch.
+// There used to be `pointerenter`/`pointerleave` listeners here as well, but they
+// arm on the whole *window* rectangle while the hit test works on the circle, so
+// entering the window over a corner armed it and nothing disarmed it again — the
+// exact "invisible click eater" this feature exists to remove.
+api.onHitTest((point) => { setInteractive(hitsMedalAt(point.x, point.y)); });
 
 // ------------------------------------------------------------------- startup --
 function toBlobUrl(base64) {

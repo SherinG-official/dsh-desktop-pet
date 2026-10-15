@@ -1,6 +1,6 @@
 {
   "name": "dsh-desktop-pet",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "DeepSeek Harness desktop pet: a floating mascot with live token usage and account balance, a standby medallion that brings it back, and control buttons in the harness page. Host plugin + Web client module. See README-zh.md.",
   "type": "module",
   "main": "lib/index.js",
