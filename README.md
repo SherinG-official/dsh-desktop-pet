@@ -177,6 +177,12 @@ $DSH_HOME/dsh-session-board/skins-state.json     # { active: '<皮肤 id>' }
 
 两个包同时装着会各挂一个侧边栏图标；`main` 的 key 已改成 `session-board`，所以不会互相顶掉。
 
+## 许可
+
+- 本插件代码：**MIT**（根目录 `LICENSE`）
+- `pet/` 子目录：来自 [dsh-desktop-pet](https://github.com/SherinG-official/dsh-desktop-pet)，**Apache-2.0**，
+  许可文本保留在 `pet/LICENSE`；该子树不受根目录 MIT 覆盖
+
 ## 开发
 
 ```powershell
