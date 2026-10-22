@@ -115,30 +115,27 @@ window.__ModuleLoader__.load({
      * （这比社区那种维护哈希前缀表的做法稳）。
      */
     /**
-     * 液态玻璃：同一个材质，只用在**三处**真正该是玻璃的东西上 ——
+     * 液态玻璃：同一个材质，用在**四类**真正该是玻璃的面 ——
      *   1. 会话输入卡   `[data-composer-card]`（InputBar 写死的稳定标记）
-     *   2. 设置面板     `[data-shortcut-modal="settings"]`（SettingsRoot 的 panel）
-     *   3. 其它模态框   `[role="dialog"][aria-modal="true"]`
-     * 侧栏、消息列表、卡片一律不碰：那是上一版"整块下半变玻璃板"的教训。
+     *   2. 设置面板     `[data-shortcut-modal="settings"]`
+     *   3. 弹窗         `[role="dialog"]`（宿主 Modal 原语的 panel 固定带 role=dialog + aria-modal）
+     *   4. 本插件看板   `.dsh-sb-card` / 胶囊 / 搜索框
+     * 按钮、菜单、侧栏选中行不碰：上一版刷过，每个小控件都浮一层反而脏，已回退。
      *
      * 三个关键事实（从参考实现里量出来的）：
-     *   1. 宿主给输入卡打了稳定标记 `data-composer-card`；设置面板有 `data-shortcut-modal`。
+     *   1. 宿主给输入卡打了稳定标记 `data-composer-card`；设置面板有 `data-shortcut-modal`；
+     *      所有 Modal 弹窗的 panel 都是 `role="dialog"` + `aria-modal="true"` + `<hash>_dialog`。
      *   2. 折射靠一个"裸" `<feDisplacementMap scale>`：不给 in/in2 时它把 backdrop
      *      快照自己的 alpha 边当作位移图，贴边处的内容因此被弯折。
-     *   3. 过滤器挂在 `::before`（`border-radius: inherit`），不挂本体 ——
-     *      `backdrop-filter` 会让元素变成 fixed 后代的包含块，弹层会跑位。
-     */
-    /**
-     * 液态玻璃：**只保留三处** —— 会话输入卡、设置面板、本插件的看板。
-     *
-     * 上一版把按钮 / 菜单 / 侧栏选中行也刷成玻璃，观感反而变脏，已回退：
-     * 玻璃是"浮起来的面"，每个小控件都浮一层就没有层次了。
-     *
-     * 两条必须守住的约束（都踩过）：
-     *   · 玻璃层永远 `z-index:-1` + 父元素 `isolation:isolate`，否则会盖住文字；
-     *   · 玻璃面保留半透明底色，不能全透明——否则深色遮罩上就是"深底深字"。
+     *   3. 输入卡/设置面板这份材质挂在 `::before`（避免 containing block 副作用）；
+     *      弹窗因为定位五花八门，改用元素自身的 `backdrop-filter`。
      */
     const GLASS_SURFACE = ':is([data-composer-card],[data-shortcut-modal="settings"])'
+    /**
+     * 弹窗：宿主所有基于 `Modal` 原语的对话框都带 `role="dialog"`
+     * （重命名会话、归档确认、用量面板、账号浮层……）；设置面板也在里面，但走上面那套规格。
+     */
+    const GLASS_POPUP = '[role="dialog"]:not([data-shortcut-modal="settings"]),[role="alertdialog"]'
 
     const GLASS_GLOBAL_CSS = [
       // 淡冷调蓝紫底：只给玻璃一点可折射的东西，不重绘整个界面。
@@ -155,6 +152,21 @@ window.__ModuleLoader__.load({
       // 设置面板内部导航不要自己铺实底，否则玻璃被盖住
       'html[data-dsh-sb-skin="glass"] [data-shortcut-modal="settings"] > nav{background-color:transparent!important}',
 
+      /* ---------- 弹窗（重命名会话、确认框、用量面板…） ---------- */
+      // 直接用元素自身的 backdrop-filter，不挂伪元素：弹窗的定位五花八门（有的还是
+      // createPortal 出来的 fixed 面板），伪元素锚点容易跑。backdrop-filter 不会盖住内容，
+      // 也就不存在上一版"设置里看不到字"的层叠问题。
+      // 排除设置面板：它走上面那套 24px 的规格。
+      `html[data-dsh-sb-skin="glass"] ${GLASS_POPUP}{` +
+        'background-color:rgba(255,255,255,.60)!important;' +
+        'background-image:linear-gradient(145deg,rgba(255,255,255,.26),rgba(255,255,255,.03) 52%,rgba(126,146,255,.12))!important;' +
+        'border:1px solid rgba(255,255,255,.50)!important;' +
+        'border-radius:18px!important;' +
+        'corner-shape:superellipse(1.12);' +
+        '-webkit-backdrop-filter:blur(16px) saturate(160%) url(#dsh-sb-refract);backdrop-filter:blur(16px) saturate(160%) url(#dsh-sb-refract);' +
+        'box-shadow:inset 0 1px 0 rgba(255,255,255,.60),inset 0 -1px 0 rgba(255,255,255,.08),0 18px 44px -24px rgba(10,20,50,.55)!important' +
+        '}',
+
       /* ---------- 看板自身 ---------- */
       'html[data-dsh-sb-skin="glass"] .dsh-sb-card{background-color:rgba(255,255,255,.30)!important;background-image:linear-gradient(145deg,rgba(255,255,255,.40),rgba(255,255,255,.05) 55%,rgba(126,146,255,.10))!important;border-color:rgba(255,255,255,.46)!important;border-radius:16px!important;-webkit-backdrop-filter:blur(12px) saturate(150%);backdrop-filter:blur(12px) saturate(150%);box-shadow:inset 0 1px 0 rgba(255,255,255,.62),0 12px 28px -20px rgba(10,20,50,.5)!important;corner-shape:superellipse(1.1)}',
       'html[data-dsh-sb-skin="glass"] .dsh-sb-card:hover{border-color:rgba(255,255,255,.8)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 16px 34px -20px rgba(10,20,50,.55)!important}',
@@ -165,6 +177,7 @@ window.__ModuleLoader__.load({
       `html[data-dsh-sb-skin="glass"] body[data-ds-dark-theme] ${GLASS_SURFACE}{background-color:rgba(18,26,44,.60)!important;border-color:rgba(170,195,255,.26)!important;box-shadow:0 22px 50px -26px rgba(0,0,0,.8)!important}`,
       `html[data-dsh-sb-skin="glass"] body[data-ds-dark-theme] ${GLASS_SURFACE}::before{background:linear-gradient(145deg,rgba(170,195,255,.14),rgba(255,255,255,.02) 46%,rgba(124,90,255,.12));box-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 -1px 0 rgba(255,255,255,.04),inset 0 0 26px rgba(140,170,255,.06)}`,
       'html[data-dsh-sb-skin="glass"] body[data-ds-dark-theme] .dsh-sb-card{background-color:rgba(34,46,74,.52)!important;background-image:linear-gradient(145deg,rgba(170,195,255,.18),rgba(255,255,255,.02) 55%,rgba(124,90,255,.12))!important;border-color:rgba(170,195,255,.26)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 12px 28px -20px rgba(0,0,0,.7)!important}',
+      `html[data-dsh-sb-skin="glass"] body[data-ds-dark-theme] ${GLASS_POPUP}{background-color:rgba(18,26,44,.66)!important;background-image:linear-gradient(145deg,rgba(170,195,255,.16),rgba(255,255,255,.02) 52%,rgba(124,90,255,.14))!important;border-color:rgba(170,195,255,.26)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.20),0 20px 46px -24px rgba(0,0,0,.8)!important}`,
     ].join('\n')
 
     /** 折射过滤器：裸 feDisplacementMap（不显式 in/in2 → 用 backdrop 自己的 alpha 边做位移图）。 */
