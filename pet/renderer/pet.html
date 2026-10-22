@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <!--
+    Strictest policy that still works: art arrives from the bridge as blob urls,
+    so no file:// or network source is reachable from this renderer.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src blob: data:; style-src 'self' file: 'unsafe-inline'; script-src 'self';" />
+  <title>DSH 桌宠</title>
+  <link rel="stylesheet" href="pet.css" />
+</head>
+<body>
+  <div id="bubble" class="bubble" aria-live="polite">
+    <div class="bubble-head" id="bubbleTitle">在想事情…</div>
+    <div class="bubble-row">
+      <span class="k">本会话</span><span class="v" id="sessionTokens">—</span>
+    </div>
+    <div class="bubble-row">
+      <span class="k">累计</span><span class="v" id="allTimeTokens">—</span>
+    </div>
+    <div class="bubble-row">
+      <span class="k">余额</span><span class="v" id="balance">—</span>
+    </div>
+    <div class="ctx" id="ctxBar"><i id="ctxFill"></i></div>
+    <span class="bubble-tail"></span>
+  </div>
+
+  <div id="pet" class="pet" data-state="idle">
+    <!-- body and topknot are the same art on two layers, so the ahoge can sway
+         on its own without a visible seam -->
+    <div class="layer body">
+      <img id="bodyBase" class="art" alt="DeepSeek 娘" draggable="false" />
+      <img id="bodyChew" class="art chew" alt="" draggable="false" />
+    </div>
+    <div class="layer topknot">
+      <img id="knotBase" class="art" alt="" draggable="false" />
+      <img id="knotChew" class="art chew" alt="" draggable="false" />
+    </div>
+    <div id="badge" class="badge" hidden>工作中<i></i></div>
+  </div>
+
+  <script src="pet.js"></script>
+</body>
+</html>

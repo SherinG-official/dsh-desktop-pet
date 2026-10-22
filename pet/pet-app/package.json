@@ -1,0 +1,9 @@
+{
+  "name": "dsh-pet",
+  "productName": "DSH Pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "独立进程的 DSH 桌宠：自己读用量与余额，改样式只需重启它。",
+  "main": "main.js",
+  "type": "commonjs"
+}

@@ -1,0 +1,195 @@
+/* DSH desktop pet — the medallion that stands in for a hidden pet.
+   Same visual language as the mascot's bubble: white card, thick navy outline,
+   hard little drop shadow. Everything is positioned in absolute pixels on a
+   fixed 148x176 canvas, because the window scales with setZoomFactor and the
+   layout must survive every zoom level unchanged. */
+
+:root {
+  --ink: #1c2b53;
+  --paper: #ffffff;
+  --accent: #3f6ad8;
+  --warn: #e08a2e;
+  --bad: #d9534f;
+  --good: #2f9e6b;
+  --track: #dfe6f6;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  background: transparent;
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar { width: 0; height: 0; }
+
+body.dragging { cursor: grabbing; }
+
+.root { position: absolute; inset: 0; }
+
+/* ------------------------------------------------------------------ medallion -- */
+/* The hover scale lives here, not on .root: the hint sits above this box and
+   would be pushed out of the window by the transform. */
+.medal {
+  position: absolute;
+  inset: 0;
+  transform-origin: 74px 112px;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform;
+}
+
+body:not(.dragging) .root:hover .medal { transform: scale(1.05); }
+body.dragging .medal { transition: none; }
+
+.ring {
+  position: absolute;
+  left: 20px;
+  top: 52px;
+  width: 108px;
+  height: 108px;
+  overflow: visible;
+}
+
+.ring circle {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.ring-track { stroke: var(--track); }
+
+.ring-fill {
+  stroke: var(--accent);
+  stroke-dasharray: 307.876;
+  stroke-dashoffset: 307.876;
+  /* rotate about the circle's own centre, whatever the viewBox units are */
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  transition: stroke-dashoffset 0.5s ease, stroke 0.3s linear;
+}
+
+.ring-fill.warn { stroke: var(--warn); }
+.ring-fill.bad { stroke: var(--bad); }
+
+/* the pixel geometry that keeps the disc concentric with the ring:
+   ring centre = 20 + 54 = 74 = 27 + 47 = disc centre, and 52 + 54 = 59 + 47 */
+.disc {
+  position: absolute;
+  left: 27px;
+  top: 59px;
+  width: 94px;
+  height: 94px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  overflow: hidden;
+  /* drawn to be a sticker: a crisp offset shadow reads as "hand-drawn", and a
+     soft one keeps it from looking pasted flat onto a dark wallpaper */
+  box-shadow: 0 3px 0 rgba(28, 43, 83, 0.20), 0 8px 18px rgba(16, 26, 58, 0.28);
+  transition: box-shadow 0.3s ease;
+}
+
+.face {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* the art is a square head-shot: push it slightly past the circle so the hair
+     reaches the rim instead of leaving a white crescent */
+  transform: scale(1.08);
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* ---------------------------------------------------------------------- tag -- */
+.tag {
+  position: absolute;
+  left: 50%;
+  top: 148px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 3px 0 rgba(28, 43, 83, 0.18);
+}
+
+.tag .sep { font-style: normal; color: #9aa8c8; }
+.tag .v.good { color: var(--good); }
+.tag .v.warn { color: var(--warn); }
+.tag .v.bad { color: var(--bad); }
+
+/* --------------------------------------------------------------------- hint -- */
+.hint {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 140px;
+  padding: 5px 8px;
+  border-radius: 12px;
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.02em;
+  box-shadow: 0 3px 0 rgba(28, 43, 83, 0.14);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: none;
+}
+
+.hint.on { opacity: 1; transform: translateY(0); }
+
+/* the tail that points from the hint down at the medallion */
+.hint::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6.5px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--paper);
+  border-right: 2.5px solid var(--ink);
+  border-bottom: 2.5px solid var(--ink);
+  transform: rotate(45deg);
+}
+
+/* --------------------------------------------------------------------- busy -- */
+/* Working: the medallion breathes and the ring lights up. Deliberately subtle —
+   this window is always on top, so anything louder becomes a distraction. */
+body[data-busy="on"] .disc {
+  animation: bob 1.6s ease-in-out infinite;
+}
+
+body[data-busy="on"] .ring {
+  filter: drop-shadow(0 0 5px rgba(63, 106, 216, 0.55));
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}

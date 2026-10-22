@@ -1,0 +1,331 @@
+/* DSH desktop pet — transparent window.
+   The mascot is two registered copies of the same art: the body breathes and the
+   topknot sways on its own layer, so the ahoge animates without splitting the
+   drawing. No circular crop — the supplied art is already a cut-out. */
+
+:root {
+  --ink: #1c2b53;          /* the drawing's own line colour family */
+  --ink-soft: #5b6b93;
+  --paper: #ffffff;
+  --accent: #3f6ad8;
+  --warn: #e08a2e;
+  --bad: #d9534f;
+  --good: #2f9e6b;
+  --split: 15.5%;          /* where the topknot layer takes over */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Belt and braces: moving a transparent window can momentarily make its
+     content overflow, and a transient scrollbar changes the layout width. That
+     is what used to nudge the bubble sideways while dragging. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  background: transparent;
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grab;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar { width: 0; height: 0; }
+
+body.dragging { cursor: grabbing; }
+
+/* While dragging, the window is repositioned every frame. Pausing the idle
+   animations and dropping the drop-shadow filter removes most of the per-frame
+   repaint cost, which is what keeps the character glued to the cursor. */
+body.dragging .pet,
+body.dragging .layer.topknot,
+body.dragging .layer.body {
+  animation-play-state: paused;
+}
+
+body.dragging .layer .art { filter: none; }
+body.dragging .bubble { transition: none; }
+
+/* ------------------------------------------------------------------ mascot -- */
+.pet {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 290px;
+  height: 340px;
+  margin-left: -145px;
+  transform-origin: 50% 96%;
+  animation: breathe 3.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+}
+
+.layer .art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 8px 14px rgba(16, 26, 58, 0.22));
+}
+
+/* the topknot: the same art again, clipped to the tuft, pivoting at its base */
+.layer.topknot {
+  -webkit-clip-path: polygon(0 0, 100% 0, 100% var(--split), 0 var(--split));
+  clip-path: polygon(0 0, 100% 0, 100% var(--split), 0 var(--split));
+  transform-origin: 52% var(--split);
+  animation: ahoge 3.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+.layer.body {
+  -webkit-clip-path: polygon(0 var(--split), 100% var(--split), 100% 100%, 0 100%);
+  clip-path: polygon(0 var(--split), 100% var(--split), 100% 100%, 0 100%);
+}
+
+/* chewing frame, cross-faded over the resting face */
+.art.chew { opacity: 0; transition: opacity 0.16s linear; }
+.pet[data-chew="on"] .art.chew { opacity: 1; }
+
+@keyframes breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-3px) scale(1.012); }
+}
+
+@keyframes ahoge {
+  0%, 100% { transform: rotate(-1.6deg); }
+  50%      { transform: rotate(1.9deg); }
+}
+
+/* running: livelier bob, faster ahoge, and the mouth keeps chewing.
+   `working` replaces the old `busy` name: the main process names the state now
+   (see lib/pet-state.js), and the names describe what the agent is doing rather
+   than how the pet happens to look. */
+.pet[data-state="working"] {
+  animation: bob 1.5s ease-in-out infinite;
+}
+
+.pet[data-state="working"] .layer.topknot {
+  animation: ahoge-busy 1.5s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) scale(1.01); }
+  50%      { transform: translateY(-6px) scale(1.03); }
+}
+
+@keyframes ahoge-busy {
+  0%, 100% { transform: rotate(-3.2deg); }
+  50%      { transform: rotate(4deg); }
+}
+
+/* thinking: the model is composing, nothing is executing yet — a slower sway
+   reads as "busy in the head" rather than "busy with hands". */
+.pet[data-state="thinking"] {
+  animation: bob 2.8s ease-in-out infinite;
+}
+
+.pet[data-state="thinking"] .layer.topknot {
+  animation: ahoge 2.2s ease-in-out infinite;
+}
+
+/* celebrate: three quick bounces, then it settles back into the resting breath */
+.pet[data-state="celebrate"] {
+  animation: cheer 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 3;
+}
+
+.pet[data-state="celebrate"] .layer.topknot {
+  animation: ahoge-busy 0.5s ease-in-out infinite;
+}
+
+@keyframes cheer {
+  0%, 100% { transform: translateY(0) scale(1); }
+  35%      { transform: translateY(-14px) scale(1.05); }
+  70%      { transform: translateY(0) scale(0.98); }
+}
+
+/* error: a small damped shake — "something is wrong", not a tantrum */
+.pet[data-state="error"] {
+  animation: wobble 0.4s ease-in-out 3;
+}
+
+.pet[data-state="error"] .layer.topknot {
+  animation: ahoge 1.1s ease-in-out infinite;
+}
+
+@keyframes wobble {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25%      { transform: translateX(-5px) rotate(-1.4deg); }
+  75%      { transform: translateX(5px) rotate(1.4deg); }
+}
+
+/* sleep: sinks a little and breathes much more slowly. The art is the resting
+   face (`idle`) — an eighth drawing is not worth it for a posture CSS can
+   express, and the desaturation is what sells "asleep" at a glance. */
+.pet[data-state="sleep"] {
+  animation: slumber 6s ease-in-out infinite;
+  filter: saturate(0.82) brightness(0.96);
+}
+
+.pet[data-state="sleep"] .layer.topknot {
+  animation: ahoge 5s ease-in-out infinite;
+}
+
+@keyframes slumber {
+  0%, 100% { transform: translateY(4px) scale(0.995); }
+  50%      { transform: translateY(1px) scale(1.005); }
+}
+
+/* hover: a touch bigger and a little more sway */
+.pet[data-state="hover"] {
+  animation: breathe 3.2s ease-in-out infinite;
+}
+
+.pet[data-state="hover"] .layer.topknot {
+  animation: ahoge 2.6s ease-in-out infinite;
+}
+
+/* click: squash and stretch, origin pinned at the feet */
+.pet[data-squash="on"] {
+  animation: squash 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes squash {
+  0%   { transform: scale(1, 1); }
+  28%  { transform: scale(1.11, 0.88) translateY(4px); }
+  55%  { transform: scale(0.95, 1.07) translateY(-5px); }
+  78%  { transform: scale(1.03, 0.98); }
+  100% { transform: scale(1, 1); }
+}
+
+/* ------------------------------------------------------------------- badge -- */
+.badge {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  box-shadow: 0 3px 0 rgba(28, 43, 83, 0.18);
+}
+
+/* the badge only stands in when the bubble is not on screen */
+body.show-bubble .badge { display: none; }
+
+/* `[hidden]` has to be spelled out: the UA rule is a bare `display: none`, and
+   `.badge`'s own `display: inline-flex` outranks it — so the pill stayed painted
+   and read "工作中" over a pet that was doing nothing. */
+.badge[hidden] { display: none; }
+
+.badge i { font-style: normal; }
+.badge i::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+
+@keyframes dots {
+  0%   { content: ""; }
+  25%  { content: "·"; }
+  50%  { content: "··"; }
+  75%  { content: "···"; }
+}
+
+/* ------------------------------------------------------------------ bubble -- */
+/* Styled after the reference art: white card, thick navy outline, a stepped
+   tail pointing down toward the mascot. Positioned at a FIXED distance from the
+   window's left edge — no percentage, no transform — so nothing about the
+   character's animation or the window's movement can shift it. */
+.bubble {
+  position: absolute;
+  left: 48px;
+  top: 24px;
+  width: 232px;
+  padding: 9px 12px 10px;
+  border-radius: 18px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.45;
+  box-shadow: 0 6px 0 rgba(28, 43, 83, 0.14), 0 10px 22px rgba(16, 26, 58, 0.18);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s ease, visibility 0.18s;
+}
+
+.pet:hover ~ .bubble,
+body.show-bubble .bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+.bubble-tail {
+  position: absolute;
+  left: 34px;
+  bottom: -12px;
+  width: 22px;
+  height: 12px;
+}
+
+.bubble-tail::before,
+.bubble-tail::after {
+  content: "";
+  position: absolute;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+}
+
+.bubble-tail::before { left: 0; bottom: 0; width: 11px; height: 11px; }
+.bubble-tail::after { left: 13px; bottom: 4px; width: 6px; height: 6px; }
+
+.bubble-head {
+  font-weight: 700;
+  margin-bottom: 3px;
+  letter-spacing: 0.02em;
+}
+
+.bubble-row { display: flex; justify-content: space-between; gap: 14px; }
+.bubble-row .k { color: var(--ink-soft); }
+.bubble-row .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+.bubble-row .v.good { color: var(--good); }
+.bubble-row .v.warn { color: var(--warn); }
+.bubble-row .v.bad { color: var(--bad); }
+
+.ctx {
+  margin-top: 7px;
+  height: 5px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  overflow: hidden;
+  background: #eef2fb;
+}
+
+.ctx i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.ctx i.warn { background: var(--warn); }
+.ctx i.bad { background: var(--bad); }

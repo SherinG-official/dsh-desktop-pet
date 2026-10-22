@@ -1,0 +1,13 @@
+# dsh-session-board 的 bundle patch。
+#
+# 顶层是 loader patch 数组：profile 启动时按 dsh.profile.bundles 的顺序
+# 把每个 bundle 的 patch 依次叠加。这一行把本包的 host 半边挂进 host plane。
+#
+# name 是裸包名，通过 profile 的 node_modules 解析；浏览器半边由
+# package.json 的 dsh.client + exports["./client"] 自动进入 client 模块图。
+#
+# 0.2.0 起改名：dsh-workbench → dsh-session-board（避开 npm 上已有的同名包）。
+# 旧行必须先从 profile 里卸载，否则两个包会各挂一个侧边栏图标。
+- insert:
+    - id: session-board
+      name: dsh-session-board

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <!--
+    Same policy as the mascot's window: art arrives from the bridge as blob
+    urls, so no file:// or network source is reachable from this renderer.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src blob: data:; style-src 'self' file: 'unsafe-inline'; script-src 'self';" />
+  <title>DSH 桌宠</title>
+  <link rel="stylesheet" href="launcher.css" />
+</head>
+<body>
+  <div class="root">
+    <!-- shown once, right after the pet disappears: the medallion is the only
+         way back, and nothing else on the desktop says so -->
+    <div class="hint" id="hint">点我唤回桌宠</div>
+
+    <div class="medal" id="medal">
+      <!-- the ring is the context gauge; its circumference is 2π·49, which the
+           renderer turns into a dash offset -->
+      <svg class="ring" viewBox="0 0 108 108" aria-hidden="true">
+        <circle class="ring-track" cx="54" cy="54" r="49" />
+        <circle class="ring-fill" id="ringFill" cx="54" cy="54" r="49" />
+      </svg>
+
+      <div class="disc">
+        <img class="face" id="face" alt="DeepSeek 娘" draggable="false" />
+      </div>
+
+      <div class="tag" id="tag">
+        <span class="v" id="tagCtx">—</span>
+        <i class="sep">·</i>
+        <span class="v" id="tagMoney">—</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="launcher.js"></script>
+</body>
+</html>
