@@ -5,8 +5,6 @@ import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import Schema from '@deepseek-ai/schemastery'
-
 import { PetState } from './pet-state.js'
 
 export const name = 'dsh-desktop-pet'
@@ -81,43 +79,28 @@ trace(`module loaded (node ${process.version}, electron=${process.versions.elect
  *     panel in the harness page calls them over the HTTP route below.
  */
 
-export const Config = Schema.object({
-  enabled: Schema.boolean()
-    .default(true)
-    .description('是否在插件激活时拉起桌宠浮窗。'),
-  command: Schema.string()
-    .default('')
-    .description('启动浮窗的可执行文件。留空则用随插件安装的 electron。'),
-  args: Schema.array(Schema.string())
-    .default([])
-    .description('传给 command 的参数。留空则用内置的浮窗入口。'),
-  cwd: Schema.string()
-    .default('')
-    .description('浮窗进程的工作目录。留空则用 <DSH 主目录>/desktop-pet（不放插件包内，否则运行中的浮窗会锁住包目录、导致插件无法更新；也不放用户主目录，那里的 NTUSER.DAT 锁会让监视器挂掉）。'),
-  restartDelayMs: Schema.number()
-    .default(2000)
-    .description('浮窗异常退出后重新拉起的延迟（毫秒）。设为 0 表示退出后不再拉起。'),
-  maxRestarts: Schema.number()
-    .default(5)
-    .description('连续异常退出的次数上限，超过后停止重启并记录一次错误。'),
-  scale: Schema.number()
-    .default(1)
-    .description('桌宠初始缩放比例，0.5–2（常用 0.75 / 1 / 1.25 / 1.5）。这是首次启动的初值：之后在桌宠或右下角小圆钮上右键选「桌宠大小」即可随时调整，调整结果会被记住并覆盖此值。'),
-  controlPanel: Schema.boolean()
-    .default(true)
-    .description(`是否在 harness 的 Web 服务上注册控制接口 ${CONTROL_ROUTE}（设置页「桌宠」面板与输入框旁的小按钮都走它）。关掉后浮窗本身照常工作，只是页面里没有控制按钮。`),
-  idleSleepMs: Schema.number()
-    .default(180000)
-    .description('多久没有回合事件就让桌宠睡着（毫秒）。设为 0 表示不打盹。睡着的桌宠遇到任何事件会立刻醒来。'),
-  celebrateMs: Schema.number()
-    .default(3000)
-    .description('回合成功结束后，庆祝表情保持多久（毫秒）。'),
-  errorMs: Schema.number()
-    .default(4000)
-    .description('回合失败或 agent 报错后，难过表情保持多久（毫秒）。'),
-  clickThrough: Schema.boolean()
-    .default(true)
-    .description('透明区域点击穿透：只有画在角色身上的像素可交互，其余部分点击直接落到下层窗口。关掉后整个窗口矩形都会吃掉点击（0.3.1 及以前的行为）。'),
+/**
+ * 配置默认值。
+ *
+ * ⚠️ 这里原本是 `Schema.object({...})`（@deepseek-ai/schemastery）。并入
+ * `dsh-session-board` 后，本文件作为**被动态 import 的相对模块**运行，宿主那条
+ * 只对插件入口生效的 `@deepseek-ai/*` 解析不会覆盖到这里 —— 保留 schemastery
+ * 依赖会让整个内嵌桌宠加载失败（静默）。所以改成普通对象 + apply 里合并默认值，
+ * 零外部依赖。行为与原来的默认值逐项一致。
+ */
+const PET_DEFAULTS = Object.freeze({
+  enabled: true,
+  command: '',
+  args: [],
+  cwd: '',
+  restartDelayMs: 2000,
+  maxRestarts: 5,
+  scale: 1,
+  controlPanel: true,
+  idleSleepMs: 180000,
+  celebrateMs: 3000,
+  errorMs: 4000,
+  clickThrough: true,
 })
 
 /**
@@ -738,6 +721,8 @@ function registerControlApi(ctx, controller, log) {
 }
 
 export function apply(ctx, config, internals = {}) {
+  // 没有 schemastery 兜底，默认值在这里合并（行为与原来的 Config 默认值一致）。
+  config = { ...PET_DEFAULTS, ...(config ?? {}) }
   trace(`apply called (enabled=${config.enabled}, controlPanel=${config.controlPanel})`)
   const log = ctx.logger?.('dsh-desktop-pet') ?? console
   const controller = createController(config, log)

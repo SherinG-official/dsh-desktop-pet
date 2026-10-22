@@ -110,6 +110,11 @@ DSH 的会话列表只按时间排，你得点进去才知道进展。这个插�
 
 配置：`pet: false` 彻底关掉内嵌桌宠；`pet: { enabled, controlPanel, scale }` 透传给桌宠本身。
 
+> 并入时打了一个补丁：`pet/lib/index.js` 原先 `import Schema from '@deepseek-ai/schemastery'`。
+> 宿主那条 `@deepseek-ai/*` 解析只覆盖**插件入口**，不覆盖被动态 import 的相对子模块 ——
+> 保留它会让内嵌桌宠静默加载失败（`/dsh-desktop-pet` 变 404、没有浮窗）。现在改成普通对象
+> `PET_DEFAULTS` + `apply` 里合并默认值，零外部依赖，默认值与原来的 `Config` 逐项一致。
+
 看板侧：
 
 - **立绘**：host 侧 `lib/pet.js` 把 `pet/assets/pet/<pose>.png` 通过只读路由
