@@ -62,20 +62,22 @@ const FACE_OF = {
 };
 
 /**
- * The face to draw.
+ * 有活干吗？
  *
- * The cursor always wins: hovering is a direct answer to the user's own hand and
- * should never be delayed by whatever the agent happens to be doing. Underneath
- * that, the host's state is the answer; a window that has not heard from the
- * host (or an older one that only sends `busy`) falls back to the two states the
- * window can still justify on its own.
+ * 用户要的语义只有三档：**在干活 → 吃饭；平时 → 无表情；鼠标移上去 → 笑**。
+ * 所以"干活"取宽口径：任何 agent 在跑（`busy`），或正处在模型调用 / 工具调用里
+ * （`thinking` / `working`）。celebrate / error 不再单独换脸 —— 那会让"笑"泛滥，
+ * 而笑只该由鼠标触发。
  */
+function isBusyTokens(tokens) {
+  if (tokens.busy === true) return true
+  return tokens.state === 'working' || tokens.state === 'thinking'
+}
+
+/** 兼容旧引用：按"有没有活干"给一个脸名。真正的落点见 applyPose()。 */
 function faceFor(state) {
-  if (hovered) return 'hover';
-  const tokens = (state && state.tokens) || {};
-  const named = tokens.state && FACE_OF[tokens.state];
-  if (named) return named;
-  return tokens.busy ? 'chew' : 'idle';
+  if (hovered) return 'hover'
+  return isBusyTokens((state && state.tokens) || {}) ? 'chew' : 'base'
 }
 
 /** Swaps the drawn expression. New elements are used per change so a stale
@@ -134,40 +136,39 @@ function setChewing(on) {
 }
 
 /**
- * 立绘状态去抖 —— 修「表情抽搐」。
+ * 立绘去抖 + 三档表情。
  *
- * 抽搐的根因：一个回合里 `step/start`（thinking）和 `tool/call`（working）
- * 会几百毫秒交替一次。每次交替都要换图 + 关开咀嚼计时器，眼睛看到的就是在抽。
- * （宿主侧不发这一帧也没用：状态机本来就该逐事件变化，抖动是渲染层的问题。）
+ * 去抖的原因：一个回合里 `step/start`（thinking）和 `tool/call`（working）
+ * 会几百毫秒交替一次，每帧都换图 + 关开咀嚼计时器，眼睛看到的就是抽搐。
+ * 所以"有没有活干"必须稳定超过 400ms 才落到 DOM。
  *
- * 规则：thinking/working 这类短暂状态必须稳定超过 STATE_SETTLE_MS 才落到 DOM；
- * celebrate / error / sleep 立刻生效 —— 它们自带时长语义，不能被拖慢。
+ * 表情规则（用户定的，别再加第四档）：
+ *   有活干 → `chew`（吃饭）
+ *   平时   → `base`（无表情）
+ *   悬停   → `hover`（笑）
  */
 const STATE_SETTLE_MS = 400;
-let shownState = 'idle';
-let stateTimer = null;
+let shownBusy = false;
+let busyTimer = null;
 
-/** 把 shownState + hover 落到 DOM 上（可重复调用，幂等）。 */
+/** 把 shownBusy + hover 落到 DOM 上（可重复调用，幂等）。 */
 function applyPose() {
-  pet.dataset.state = hovered && shownState !== 'working' ? 'hover' : shownState;
-  setChewing(shownState === 'working');
+  const face = hovered ? 'hover' : shownBusy ? 'chew' : 'base';
+  setFace(face);
+  // 悬停时嘴是笑，不再咀嚼（否则嘴部两层打架，看起来像抽）。
+  setChewing(!hovered && shownBusy);
+  pet.dataset.state = hovered ? 'hover' : shownBusy ? 'working' : 'idle';
 }
 
-function scheduleState(next) {
-  if (next === shownState) return;
-  if (next === 'celebrate' || next === 'error' || next === 'sleep') {
-    if (stateTimer !== null) {
-      clearTimeout(stateTimer);
-      stateTimer = null;
-    }
-    shownState = next;
-    applyPose();
-    return;
+function scheduleBusy(next) {
+  if (next === shownBusy) return;
+  if (busyTimer !== null) {
+    clearTimeout(busyTimer);
+    busyTimer = null;
   }
-  if (stateTimer !== null) clearTimeout(stateTimer);
-  stateTimer = setTimeout(() => {
-    stateTimer = null;
-    shownState = next;
+  busyTimer = setTimeout(() => {
+    busyTimer = null;
+    shownBusy = next;
     applyPose();
   }, STATE_SETTLE_MS);
 }
@@ -211,10 +212,8 @@ function render(state) {
   const lowMoney = balance && balance.ok && Number.isFinite(balance.total) && balance.total < LOW_BALANCE;
   const moneyBroken = balance && !balance.ok;
 
-  const face = faceFor(state);
-  setFace(face);
-  // 立绘/咀嚼走 scheduleState（去抖）；文字类信息立刻更新。
-  scheduleState(machineState);
+  // 立绘只看"有没有活干"（去抖 400ms），文字类信息仍然立刻更新。
+  scheduleBusy(isBusyTokens(tokens));
   applyPose();
   badge.hidden = !busy;
 
