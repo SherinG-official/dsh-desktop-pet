@@ -1139,7 +1139,6 @@ window.__ModuleLoader__.load({
 
       const now = useNow()
       const [query, setQuery] = React.useState('')
-      const [showOlder, setShowOlder] = React.useState(false)
       const [cursor, setCursor] = React.useState(0)
       const [memory, setMemory] = React.useState({ revision: 0, groups: [], sessionsIndex: {} })
       const [memoryError, setMemoryError] = React.useState('')
@@ -1291,7 +1290,8 @@ window.__ModuleLoader__.load({
         const groupsById = new Map(groups.map((entry) => [entry.group.id, entry.group]))
         const ungrouped = []
         for (const bucket of BUCKETS) {
-          if (bucket.key === 'older' && !showOlder) continue
+          // 重要：**更早的会话不再默认隐藏**。看板的用途是回看进度，
+          // 7 天前的会话仍然有价值（本机 127 个会话里有 90+ 个超过 7 天）。
           for (const entry of buckets[bucket.key] ?? []) {
             if (grouped.has(entry.id)) continue
             if (needle !== '') {
@@ -1309,7 +1309,7 @@ window.__ModuleLoader__.load({
         }
 
         return { groups: visibleGroups, ungrouped }
-      }, [buckets, memory, query, showOlder])
+      }, [buckets, memory, query])
 
       const flatGroups = React.useMemo(
         () =>
@@ -1394,11 +1394,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dsh-sb-pill working' }, '在跑', h('b', null, String(groupCounts.working))),
             h('span', { className: 'dsh-sb-pill' }, '未分组', h('b', null, String(view.ungrouped.length))),
             counts.older > 0
-              ? h(
-                  'button',
-                  { className: 'dsh-sb-btn', onClick: () => setShowOlder((value) => !value) },
-                  showOlder ? `收起更早 ${counts.older}` : `更早 ${counts.older}`,
-                )
+              ? h('span', { className: 'dsh-sb-pill' }, '更早', h('b', null, String(counts.older)))
               : null,
             h(
               'button',
@@ -1433,7 +1429,10 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { className: 'dsh-sb-sub' },
-            `共 ${total} 个会话 · ${view.groups.length} 个工作组 · 状态全自动（24 小时分界）· 皮肤在「设置 → 皮肤」里切`,
+            `共 ${total} 个会话（宿主送到客户端的）· ${view.groups.length} 个工作组 · 未分组 ${view.ungrouped.length}` +
+              (counts.older > 0 ? ` · 其中 ${counts.older} 个超过 7 天` : '') +
+              (total - matched > 0 ? ` · ${total - matched} 个空白/子代理会话不展示` : '') +
+              ' · 皮肤在「设置 → 皮肤」里切',
           ),
           memoryError !== ''
             ? h('div', { className: 'dsh-sb-error' }, `工作组：${memoryError}`)
