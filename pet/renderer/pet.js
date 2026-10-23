@@ -395,10 +395,18 @@ document.addEventListener('pointerdown', (event) => {
 // ignoring the mouse receives none (see hitsPetAt above). Main polls the OS
 // cursor and tells the renderer where it is; the renderer answers by flipping
 // the window's interactivity itself, so no reply has to travel back.
+//
+// hover 也走这条通道，不能只听 pointerenter/pointerleave：光标移到人物以外的
+// 透明区域时，主进程会把窗口设成 click-through，**此后再也没有 pointerleave**
+// —— 于是笑一直挂着回不去。命中测试本身就是"在不在人物身上"，用它最准。
 api.onHitTest((point) => {
-  const hit = hitsPetAt(point.x, point.y);
+  const hit = point.x >= 0 && point.y >= 0 && hitsPetAt(point.x, point.y);
   traceHit(point, hit);
   setInteractive(hit);
+  if (hit !== hovered) {
+    hovered = hit;
+    if (lastState) render(lastState);
+  }
 });
 
 document.addEventListener('pointermove', (event) => {

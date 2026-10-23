@@ -227,6 +227,11 @@ function startCursorWatch() {
         if (outside[which] !== true) {
           outside[which] = true;
           setInteractive(which, false);
+          // 光标离开整个窗口：也要告诉渲染层一声，否则 hover 会卡在最后
+          // 一次命中上（笑一直挂着）。用 (-1,-1) 当"外面"的哨兵。
+          try {
+            win.webContents.send('pet:hit-test', { x: -1, y: -1 });
+          } catch { /* the renderer is not listening yet */ }
         }
         continue;
       }
