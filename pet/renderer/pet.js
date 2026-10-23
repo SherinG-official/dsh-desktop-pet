@@ -134,6 +134,45 @@ function setChewing(on) {
 }
 
 /**
+ * 立绘状态去抖 —— 修「表情抽搐」。
+ *
+ * 抽搐的根因：一个回合里 `step/start`（thinking）和 `tool/call`（working）
+ * 会几百毫秒交替一次。每次交替都要换图 + 关开咀嚼计时器，眼睛看到的就是在抽。
+ * （宿主侧不发这一帧也没用：状态机本来就该逐事件变化，抖动是渲染层的问题。）
+ *
+ * 规则：thinking/working 这类短暂状态必须稳定超过 STATE_SETTLE_MS 才落到 DOM；
+ * celebrate / error / sleep 立刻生效 —— 它们自带时长语义，不能被拖慢。
+ */
+const STATE_SETTLE_MS = 400;
+let shownState = 'idle';
+let stateTimer = null;
+
+/** 把 shownState + hover 落到 DOM 上（可重复调用，幂等）。 */
+function applyPose() {
+  pet.dataset.state = hovered && shownState !== 'working' ? 'hover' : shownState;
+  setChewing(shownState === 'working');
+}
+
+function scheduleState(next) {
+  if (next === shownState) return;
+  if (next === 'celebrate' || next === 'error' || next === 'sleep') {
+    if (stateTimer !== null) {
+      clearTimeout(stateTimer);
+      stateTimer = null;
+    }
+    shownState = next;
+    applyPose();
+    return;
+  }
+  if (stateTimer !== null) clearTimeout(stateTimer);
+  stateTimer = setTimeout(() => {
+    stateTimer = null;
+    shownState = next;
+    applyPose();
+  }, STATE_SETTLE_MS);
+}
+
+/**
  * The bubble's headline for a state.
  *
  * A pet that says "正在干活…" for every kind of work is barely more informative
@@ -174,10 +213,9 @@ function render(state) {
 
   const face = faceFor(state);
   setFace(face);
-  // Only `working` chews: the mouth animation is the "I am busy" tell, and
-  // running it during a celebration or a nap would say the wrong thing.
-  setChewing(machineState === 'working');
-  pet.dataset.state = hovered && machineState !== 'working' ? 'hover' : machineState;
+  // 立绘/咀嚼走 scheduleState（去抖）；文字类信息立刻更新。
+  scheduleState(machineState);
+  applyPose();
   badge.hidden = !busy;
 
   document.body.classList.toggle('show-bubble', hovered || busy);
