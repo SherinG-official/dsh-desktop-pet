@@ -263,6 +263,9 @@ window.__ModuleLoader__.load({
       { key: 'working', label: '进行中', hint: '组里有会话正在跑' },
       { key: 'idle', label: '空闲', hint: '组里最近的活动在 24 小时内' },
       { key: 'ended', label: '已结束', hint: '组里最近的活动在 24 小时到 7 天之间' },
+      // ⚠️ older 必须在这里：否则「组里最急的会话超过 7 天」的组会被算进一个
+      // 没有对应列的桶，整张组卡直接不渲染 —— 表现就是"拖进组之后消失了"。
+      { key: 'older', label: '更早', hint: '组里最近的活动超过 7 天' },
       { key: 'empty', label: '空工作组', hint: '还没有会话，把会话拖进来' },
     ]
 
@@ -1520,7 +1523,12 @@ window.__ModuleLoader__.load({
                             onRename: renameGroup,
                             onDelete: () => removeGroup(entry.group.id),
                             onRemoveMember: removeFromGroup,
-                            onDropSession: addToGroup,
+                            onDropSession: (groupId, sessionId) => {
+                              // 拖进去之后自动展开：否则会话从「未分组」消失、
+                              // 组卡又默认收起，看起来就像丢了一样。
+                              setExpanded((previous) => new Set(previous).add(groupId))
+                              void addToGroup(groupId, sessionId)
+                            },
                           }),
                         ),
                       ),
