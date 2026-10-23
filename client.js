@@ -652,9 +652,16 @@ window.__ModuleLoader__.load({
 
     /**
      * 一条会话属于哪一列。返回 null 表示不展示。
+     *
+     * @param {Set<string>} archived `useWorkspaces().archivedSessionIds` 的集合
      */
-    function classify(row, status, now) {
+    function classify(row, status, now, archived) {
       if (!row) return null
+      // 已归档：用户明确不想看（归档是 workspace 层的状态，不在 SessionSummary 里）。
+      if (archived instanceof Set) {
+        const key = row.sessionId ?? row.id
+        if (typeof key === 'string' && archived.has(key)) return null
+      }
       // 空会话没有内容可看；子代理会话会把看板刷爆，都不展示。
       if (row.blank === true) return null
       if (isSubagentRow(row)) return null
@@ -677,6 +684,10 @@ window.__ModuleLoader__.load({
     const useNoSessions = (selector) => selector({ byId: EMPTY_BY_ID, items: [] })
     const useNoStatus = () => null
     const useAlwaysActive = () => true
+    /** 没有 useWorkspaces 标准 prop 时的兜底：当成"没有任何归档"。 */
+    const useNoWorkspaces = (selector) => selector({})
+    /** 稳定的空数组：选择器每次都返回同一个引用，避免无谓重渲染。 */
+    const EMPTY_ARCHIVED = Object.freeze([])
 
     /** 渲染期不读时钟：每 30 秒推一次 now，相对时间才不会停在挂载时刻。 */
     function useNow() {
@@ -1146,11 +1157,18 @@ window.__ModuleLoader__.load({
       const useSessions = sessionsWired ? props.useSessions : useNoSessions
       const useSessionStatus = typeof props.useSessionStatus === 'function' ? props.useSessionStatus : useNoStatus
       const usePanelInfo = typeof props.usePanelInfo === 'function' ? props.usePanelInfo : useAlwaysActive
+      const useWorkspaces = typeof props.useWorkspaces === 'function' ? props.useWorkspaces : useNoWorkspaces
 
       const byId = useSessions((state) => (state && state.byId) || EMPTY_BY_ID)
       const storeItemCount = useSessions((state) => (Array.isArray(state?.items) ? state.items.length : 0))
       const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
       const statuses = useSessionStatus((value) => value)
+      // 归档是工作区层的状态：SessionSummary 里没有，只能从 useWorkspaces 的快照拿。
+      const archivedIds = useWorkspaces((state) => state?.archivedSessionIds ?? EMPTY_ARCHIVED)
+      const archived = React.useMemo(
+        () => new Set(Array.isArray(archivedIds) ? archivedIds : []),
+        [archivedIds],
+      )
 
       const now = useNow()
       const [query, setQuery] = React.useState('')
@@ -1248,7 +1266,7 @@ window.__ModuleLoader__.load({
         for (const [id, row] of Object.entries(byId)) {
           if (!row) continue
           totalCount += 1
-          const bucket = classify(row, statusOf(statuses, id), now)
+          const bucket = classify(row, statusOf(statuses, id), now, archived)
           if (bucket === null) continue
           if (needle !== '') {
             const haystack = `${row.title ?? ''} ${row.cwd ?? ''}`.toLowerCase()
@@ -1264,7 +1282,7 @@ window.__ModuleLoader__.load({
         }
 
         return { buckets: groups, total: totalCount, matched: matchedCount }
-      }, [byId, statuses, query, now])
+      }, [byId, statuses, query, now, archived])
 
       /**
        * 看板现在以「工作组」为单位：组卡按组内最急的会话状态分桶，
@@ -1446,7 +1464,7 @@ window.__ModuleLoader__.load({
             { className: 'dsh-sb-sub' },
             `共 ${total} 个会话（宿主送到客户端的）· ${view.groups.length} 个工作组 · 未分组 ${view.ungrouped.length}` +
               (counts.older > 0 ? ` · 其中 ${counts.older} 个超过 7 天` : '') +
-              (total - matched > 0 ? ` · ${total - matched} 个空白/子代理会话不展示` : '') +
+              (total - matched > 0 ? ` · ${total - matched} 个已归档/空白/子代理会话不展示` : '') +
               ' · 皮肤在「设置 → 皮肤」里切',
           ),
           memoryError !== ''
