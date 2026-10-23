@@ -23,7 +23,7 @@
   ],
   "scripts": {
     "test": "node --test tests/",
-    "test:no-spawn": "node tests/model.test.js && node tests/store.test.js && node tests/routes.test.js && node tests/pet.test.js && node tests/skins.test.js"
+    "test:no-spawn": "node tests/model.test.js && node tests/store.test.js && node tests/routes.test.js && node tests/pet.test.js && node tests/skins.test.js && node tests/memory.test.js"
   },
   "dsh": {
     "displayName": "会话进程",

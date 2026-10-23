@@ -130,6 +130,72 @@ DSH 的会话列表只按时间排，你得点进去才知道进展。这个插�
 > ⚠️ **素材归属**：立绘与浮窗代码来自你自己的 `dsh-desktop-pet`（Apache-2.0）。
 > 本机自用没问题；要发布本插件的话，保留其 LICENSE/NOTICE 或换成自有素材。
 
+## 工作组（跨会话共享记忆）
+
+> 状态：**host 层已完成并测试**（数据 / API / 注入）；看板 UI 还在改（卡片即工作组）。
+
+### 为什么能注入（M0 结论，别删）
+
+`@deepseek-ai/dsh-system-prompt` 组装时：
+
+```js
+text: typeof section.text === "function" ? section.text(context) : section.text
+```
+
+`@deepseek-ai/dsh-agent` 给的 context：
+
+```js
+{ agent, scope: agent, ...(signal && { signal }) }
+```
+
+所以 **`context.agent.id` 就是会话 id**，但求值处**没有 `await`** —— 回调必须同步、
+必须返回字符串。`lib/memory/store.js` 因此把状态常驻内存，注入零 IO。
+
+### 数据与上限
+
+`$DSH_HOME/dsh-session-board/memory.json`（与皮肤同目录）
+
+```jsonc
+{ "version": 1, "revision": 7,
+  "groups": [{ "id": "grp_…", "name": "化学实验室", "color": "#4f8cc9", "order": 10,
+               "memory": "…", "sessions": ["session-…"], "createdAt": 0, "updatedAt": 0 }] }
+```
+
+| 规则 | 值 | 行为 |
+| --- | --- | --- |
+| 单组记忆 | 4000 字符 | 超了**拒绝保存**并报错（不静默截断） |
+| 注入总量 | 8000 字符 | 超了只注入前 N 组，并注明「记忆已截断」 |
+| 每组会话数 | 200 | 超了拒绝 |
+| 一个会话挂几组 | **3** | 第 4 个直接拒绝（`GROUPS_PER_SESSION_LIMIT`） |
+| 工作组总数 | 50 | 超了拒绝 |
+| 组名 | 40 字符 | 超了拒绝 |
+| 子代理会话 | — | `subagent-` / `child-` / `delegate-` 一律拒绝入组 |
+
+注入位置 **order 1500**（工具说明 1000–1200 之后、运行环境 10000 之前），渲染成：
+
+```markdown
+## 工作组：化学实验室
+<!-- workbench-memory:grp_xxx r7 -->
+…记忆正文…
+```
+
+多组之间 `\n\n---\n\n`。**组外会话返回空串**，系统提示一个字节都不变；
+记忆为空的工作组也不占用上下文。
+
+### HTTP
+
+前缀 `/api/session-board/memory`（一条 prefix 路由再切段，非 GET 要 `x-dsh-plugin`）：
+
+```
+GET    /memory                              → { revision, limits, groups, sessionsIndex }
+POST   /memory/groups                       { name, color?, memory?, order? }
+PATCH  /memory/groups/<id>                  { name?, color?, memory?, order? }
+DELETE /memory/groups/<id>                  只删组与归属，不碰会话
+PUT    /memory/groups/<id>/sessions/<sid>
+DELETE /memory/groups/<id>/sessions/<sid>
+GET    /memory/session/<sid>                → 该会话所属组（角标用）
+```
+
 ## 用法
 
 - 侧边栏点「会话进程」图标（三竖条）→ 中央区域变成看板
