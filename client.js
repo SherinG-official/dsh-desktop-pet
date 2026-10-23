@@ -275,9 +275,13 @@ window.__ModuleLoader__.load({
       return best
     }
 
+    /** 伪工作组的 id：不属于任何组的会话，全部挂在这张「未分组」卡上（不可改名/删除/写记忆）。 */
+    const UNGROUPED_ID = '__ungrouped__'
+
     /* ---- 皮肤管理器（host 持久化 + 热切换） ------------------------------ */
 
-    const SKIN_API = '/api/session-board/skins'    /** 用户导入的皮肤（含 token 表与 CSS），由 host 拉取。 */
+    const SKIN_API = '/api/session-board/skins'
+    /** 用户导入的皮肤（含 token 表与 CSS），由 host 拉取。 */
     let userSkins = []
     /** 当前主题服务与撤销句柄；theme 服务就绪后由 apply 填入。 */
     let skinTheme = null
@@ -578,13 +582,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-newgroup{display:flex;gap:8px;align-items:center}',
       '.dsh-sb-newgroup .dsh-sb-input{flex:1 1 auto}',
       '.dsh-sb-error{font-size:11px;color:var(--dsw-alias-state-error-primary);white-space:pre-wrap}',
-      '.dsh-sb-ungrouped{margin-top:10px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:10px;border-radius:12px;transition:background .15s ease}',
-      '.dsh-sb-ungrouped.is-over{background:rgba(77,107,254,.06);outline:1px dashed var(--dsw-alias-brand-primary)}',
-      '.dsh-sb-section-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
-      '.dsh-sb-section-name{font-size:12px;font-weight:600}',
-      '.dsh-sb-section-count{font-size:11px;color:var(--dsw-alias-label-secondary)}',
-      '.dsh-sb-section-hint{font-size:10px;color:var(--dsw-alias-label-secondary);margin-left:auto}',
-      '.dsh-sb-ungrouped-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}',
+      '.dsh-sb-group.is-pseudo{border-style:dashed;background:transparent}',
+      '.dsh-sb-group.is-pseudo .dsh-sb-group-name{color:var(--dsw-alias-label-secondary);font-weight:500}',
       /* 玻璃皮肤下：工作组卡与未分组区也跟随 */
       '.dsh-sb[data-skin="glass"] .dsh-sb-group{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.34)}',
       'body[data-ds-dark-theme] .dsh-sb[data-skin="glass"] .dsh-sb-group{background:rgba(24,34,58,.44);border-color:rgba(170,195,255,.22)}',
@@ -915,6 +914,7 @@ window.__ModuleLoader__.load({
         onDelete,
         onRemoveMember,
         onDropSession,
+        pseudo = false,
       } = props
 
       const [over, setOver] = React.useState(false)
@@ -954,19 +954,23 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
-          className: `dsh-sb-group${cursor ? ' is-cursor' : ''}${over ? ' is-over' : ''}`,
+          className: `dsh-sb-group${pseudo ? ' is-pseudo' : ''}${cursor ? ' is-cursor' : ''}${over ? ' is-over' : ''}`,
           'data-bucket': bucket,
-          onDragOver: (event) => {
-            event.preventDefault()
-            if (!over) setOver(true)
-          },
-          onDragLeave: () => setOver(false),
-          onDrop: (event) => {
-            event.preventDefault()
-            setOver(false)
-            const sid = sessionOfDrag(event)
-            if (sid !== '') onDropSession(group.id, sid)
-          },
+          ...(pseudo
+            ? {}
+            : {
+                onDragOver: (event) => {
+                  event.preventDefault()
+                  if (!over) setOver(true)
+                },
+                onDragLeave: () => setOver(false),
+                onDrop: (event) => {
+                  event.preventDefault()
+                  setOver(false)
+                  const sid = sessionOfDrag(event)
+                  if (sid !== '') onDropSession(group.id, sid)
+                },
+              }),
         },
         h(
           'button',
@@ -1006,7 +1010,9 @@ window.__ModuleLoader__.load({
           { className: 'dsh-sb-group-meta' },
           waiting > 0 ? h('span', { className: 'dsh-sb-tag waiting' }, `${waiting} 等你`) : null,
           working > 0 ? h('span', { className: 'dsh-sb-tag working' }, `${working} 在跑`) : null,
-          members.length === 0 ? h('span', { className: 'dsh-sb-tag' }, '把会话拖到这里') : null,
+          members.length === 0
+            ? h('span', { className: 'dsh-sb-tag' }, pseudo ? '没有未分组的会话' : '把会话拖到这里')
+            : null,
           latest > 0 ? h('span', { className: 'dsh-sb-when' }, formatAgo(latest, now)) : null,
         ),
         preview !== '' ? h('div', { className: 'dsh-sb-group-memo' }, preview) : null,
@@ -1018,21 +1024,23 @@ window.__ModuleLoader__.load({
                 ? h(
                     'div',
                     { className: 'dsh-sb-member-empty' },
-                    '这个工作组还没有会话。把下面「未分组」里的会话拖进来。',
+                    pseudo ? '所有会话都分组了。' : '这个工作组还没有会话。把「未分组」里的会话拖进来。',
                   )
                 : members.map((member) =>
                     h(MemberRow, {
                       key: member.id,
                       id: member.id,
-                      groupId: group.id,
+                      groupId: pseudo ? '' : group.id,
                       row: member.row,
                       bucket: member.bucket,
                       now,
                       onOpen: () => onOpen(member.id),
-                      onRemove: () => onRemoveMember(group.id, member.id),
+                      onRemove: pseudo ? null : () => onRemoveMember(group.id, member.id),
                     }),
                   ),
-              h(
+              pseudo
+                ? null
+                : h(
                 'div',
                 { className: 'dsh-sb-memo' },
                 h(
@@ -1111,60 +1119,6 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
-      )
-    }
-
-    /** 底部「未分组会话」：拖进去 = 从它原来的工作组移出。 */
-    function UngroupedColumn(props) {
-      const { entries, now, onOpen, onDropSession } = props
-      const [over, setOver] = React.useState(false)
-
-      return h(
-        'div',
-        {
-          className: `dsh-sb-ungrouped${over ? ' is-over' : ''}`,
-          onDragOver: (event) => {
-            event.preventDefault()
-            if (!over) setOver(true)
-          },
-          onDragLeave: () => setOver(false),
-          onDrop: (event) => {
-            event.preventDefault()
-            setOver(false)
-            const sid = sessionOfDrag(event)
-            let fromGroup = ''
-            try {
-              fromGroup = event.dataTransfer.getData(`${DRAG_TYPE}-group`)
-            } catch {
-              /* 忽略 */
-            }
-            if (sid !== '') onDropSession(sid, fromGroup)
-          },
-        },
-        h(
-          'div',
-          { className: 'dsh-sb-section-head' },
-          h('span', { className: 'dsh-sb-section-name' }, '未分组会话'),
-          h('span', { className: 'dsh-sb-section-count' }, String(entries.length)),
-          h('span', { className: 'dsh-sb-section-hint' }, '拖到上面的工作组上即可加入'),
-        ),
-        entries.length === 0
-          ? h('div', { className: 'dsh-sb-empty-col' }, '所有会话都在工作组里了。')
-          : h(
-              'div',
-              { className: 'dsh-sb-ungrouped-body' },
-              entries.map((entry) =>
-                h(SessionCard, {
-                  key: entry.id,
-                  row: entry.row,
-                  bucket: entry.bucket,
-                  now,
-                  cursor: false,
-                  groups: entry.groups,
-                  onOpen: () => onOpen(entry.id),
-                }),
-              ),
-            ),
       )
     }
 
@@ -1357,7 +1311,13 @@ window.__ModuleLoader__.load({
         return { groups: visibleGroups, ungrouped }
       }, [buckets, memory, query, showOlder])
 
-      const flatGroups = React.useMemo(() => view.groups.map((entry) => entry.group.id), [view])
+      const flatGroups = React.useMemo(
+        () =>
+          view.ungrouped.length > 0
+            ? [...view.groups.map((entry) => entry.group.id), UNGROUPED_ID]
+            : view.groups.map((entry) => entry.group.id),
+        [view],
+      )
 
       React.useEffect(() => {
         if (!active) return undefined
@@ -1556,14 +1516,42 @@ window.__ModuleLoader__.load({
                       )
                     : null,
                 ),
-                h(UngroupedColumn, {
-                  entries: view.ungrouped,
-                  now,
-                  onOpen: openSession,
-                  onDropSession: (sessionId, fromGroup) => {
-                    if (fromGroup !== '') void removeFromGroup(fromGroup, sessionId)
-                  },
-                }),
+                view.ungrouped.length > 0
+                  ? h(
+                      'div',
+                      { className: 'dsh-sb-col', key: 'ungrouped' },
+                      h(
+                        'div',
+                        { className: 'dsh-sb-col-head' },
+                        h('span', { className: 'dsh-sb-col-name' }, '未分组'),
+                        h('span', { className: 'dsh-sb-col-count' }, String(view.ungrouped.length)),
+                      ),
+                      h(
+                        'div',
+                        { className: 'dsh-sb-col-body' },
+                        h(GroupCard, {
+                          group: { id: UNGROUPED_ID, name: '未分组', memory: '' },
+                          members: view.ungrouped.map((entry) => ({
+                            id: entry.id,
+                            row: entry.row,
+                            bucket: entry.bucket,
+                          })),
+                          bucket: groupBucketOf(view.ungrouped.map((entry) => entry.bucket)),
+                          expanded: expanded.has(UNGROUPED_ID),
+                          cursor: cursorId === UNGROUPED_ID,
+                          now,
+                          pseudo: true,
+                          onToggle: () => toggleGroup(UNGROUPED_ID),
+                          onOpen: openSession,
+                          onSaveMemory: null,
+                          onRename: null,
+                          onDelete: null,
+                          onRemoveMember: null,
+                          onDropSession: null,
+                        }),
+                      ),
+                    )
+                  : null,
               ),
 
         h(
@@ -1573,7 +1561,7 @@ window.__ModuleLoader__.load({
           h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Enter'), ' 展开/收起'),
           h('span', null, h('span', { className: 'dsh-sb-kbd' }, '/'), ' 搜索'),
           h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Esc'), ' 清空'),
-          h('span', null, '会话拖到工作组上加入 · 拖回「未分组」移出 · 每组最多 3 个会话归属'),
+          h('span', null, '会话拖到工作组上加入 · 组内 × 移出 · 每个会话最多挂 3 个组'),
         ),
       )
     }
