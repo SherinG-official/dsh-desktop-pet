@@ -635,14 +635,29 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
 
     /**
+     * 这条会话是不是子代理会话。
+     *
+     * 字段名的坑：宿主内部叫 `parentSessionId` / `delegationDepth`，但客户端 store 在
+     * `client/sessions/service.js` 里重命名成了 **`parentId`**，并且保留 `origin: 'subagent'`。
+     * 只查 `parentSessionId` 会让子代理全部漏进看板（实际踩过），所以这里把
+     * 两套命名 + origin 都查一遍。
+     */
+    function isSubagentRow(row) {
+      if (!row) return false
+      if (row.origin === 'subagent') return true
+      if (row.parentId || row.parentSessionId || row.parentSession) return true
+      const depth = row.delegationDepth ?? row.depth
+      return Number.isFinite(depth) && depth > 0
+    }
+
+    /**
      * 一条会话属于哪一列。返回 null 表示不展示。
      */
     function classify(row, status, now) {
       if (!row) return null
-      // 空会话没有内容可看；子会话（子代理）会把看板刷爆，都不展示。
+      // 空会话没有内容可看；子代理会话会把看板刷爆，都不展示。
       if (row.blank === true) return null
-      if (row.parentSessionId) return null
-      if (Number.isFinite(row.depth) && row.depth > 0) return null
+      if (isSubagentRow(row)) return null
 
       const pending = status && typeof status === 'object' ? status.pendingInteraction : undefined
       if (pending) return 'waiting'
