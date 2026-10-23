@@ -214,10 +214,70 @@ window.__ModuleLoader__.load({
       { id: 'native', name: '原生', accent: '', tagline: '宿主默认外观', tokens: null, css: '' },
     ]
 
+    /* ---- 工作组（host 持久化） ------------------------------------------ */
+
+    const MEMORY_API = '/api/session-board/memory'
+    const DRAG_TYPE = 'application/x-dsh-session'
+
+    /** 工作组接口：非 GET 必须带 x-dsh-plugin 头（宿主的最小 CSRF 防护）。 */
+    async function memoryRequest(path, method = 'GET', body) {
+      const init = { method, headers: {} }
+      if (method !== 'GET') {
+        init.headers['x-dsh-plugin'] = 'session-board'
+        init.headers['content-type'] = 'application/json'
+        init.body = JSON.stringify(body ?? {})
+      }
+      const response = await fetch(`${MEMORY_API}${path}`, init)
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload || payload.ok !== true) {
+        throw new Error(payload?.error?.message ?? `工作组接口失败（HTTP ${response.status}）`)
+      }
+      return payload.value
+    }
+
+    /** 组记忆的第一个非空行，给卡片做摘要。 */
+    function memoryPreview(memory) {
+      const line = String(memory ?? '')
+        .split('\n')
+        .map((entry) => entry.replace(/^[#>*\-\s]+/, '').trim())
+        .find((entry) => entry !== '')
+      return line ?? ''
+    }
+
+    /** 从拖拽事件里取出会话 id。 */
+    function sessionOfDrag(event) {
+      try {
+        return event.dataTransfer.getData(DRAG_TYPE) || ''
+      } catch {
+        return ''
+      }
+    }
+
+    /**
+     * 工作组的聚合状态：取组内**最急**的那个会话的状态。
+     * waiting > working > idle > ended > older；没有会话 → empty。
+     */
+    const GROUP_RANK = { waiting: 0, working: 1, idle: 2, ended: 3, older: 4 }
+    const GROUP_BUCKETS = [
+      { key: 'waiting', label: '等你回答', hint: '组里有会话卡在等你' },
+      { key: 'working', label: '进行中', hint: '组里有会话正在跑' },
+      { key: 'idle', label: '空闲', hint: '组里最近的活动在 24 小时内' },
+      { key: 'ended', label: '已结束', hint: '组里最近的活动在 24 小时到 7 天之间' },
+      { key: 'empty', label: '空工作组', hint: '还没有会话，把会话拖进来' },
+    ]
+
+    function groupBucketOf(memberBuckets) {
+      if (memberBuckets.length === 0) return 'empty'
+      let best = memberBuckets[0]
+      for (const bucket of memberBuckets) {
+        if ((GROUP_RANK[bucket] ?? 9) < (GROUP_RANK[best] ?? 9)) best = bucket
+      }
+      return best
+    }
+
     /* ---- 皮肤管理器（host 持久化 + 热切换） ------------------------------ */
 
-    const SKIN_API = '/api/session-board/skins'
-    /** 用户导入的皮肤（含 token 表与 CSS），由 host 拉取。 */
+    const SKIN_API = '/api/session-board/skins'    /** 用户导入的皮肤（含 token 表与 CSS），由 host 拉取。 */
     let userSkins = []
     /** 当前主题服务与撤销句柄；theme 服务就绪后由 apply 填入。 */
     let skinTheme = null
@@ -477,6 +537,57 @@ window.__ModuleLoader__.load({
       '.dsh-sb-settings-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
+      /* ---- 工作组卡片 ---- */
+      '.dsh-sb-group{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}',
+      '.dsh-sb-group:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 6px 18px -10px rgba(20,40,90,.35)}',
+      '.dsh-sb-group.is-cursor{box-shadow:0 0 0 2px rgba(77,107,254,.35),0 6px 18px -10px rgba(20,40,90,.35)}',
+      '.dsh-sb-group.is-over{border-color:var(--dsw-alias-brand-primary);border-style:dashed;background:rgba(77,107,254,.08)}',
+      '.dsh-sb-group[data-bucket="waiting"]{border-left:3px solid #ff9ec4}',
+      '.dsh-sb-group[data-bucket="working"]{border-left:3px solid var(--dsw-alias-state-success-primary)}',
+      '.dsh-sb-group[data-bucket="empty"]{border-style:dashed}',
+      '.dsh-sb-group-head{display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}',
+      '.dsh-sb-group-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dsh-sb-group-name-input{flex:1 1 auto;min-width:0;font:inherit;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-brand-primary);border-radius:6px;padding:1px 6px}',
+      '.dsh-sb-group-count{font-size:11px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}',
+      '.dsh-sb-chev{font-size:14px;color:var(--dsw-alias-label-secondary);width:14px;text-align:center;flex:0 0 auto}',
+      '.dsh-sb-group-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary)}',
+      '.dsh-sb-tag{font-size:10px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1)}',
+      '.dsh-sb-tag.waiting{color:#c2386b;border-color:rgba(255,158,196,.6);background:rgba(255,158,196,.14)}',
+      '.dsh-sb-tag.working{color:var(--dsw-alias-state-success-primary);border-color:rgba(60,190,120,.5);background:rgba(60,190,120,.12)}',
+      '.dsh-sb-group-memo{font-size:11px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}',
+      '.dsh-sb-group-body{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:8px;margin-top:2px}',
+      '.dsh-sb-member{display:flex;align-items:center;gap:6px}',
+      '.dsh-sb-member-main{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;padding:4px 6px;border-radius:8px;color:inherit;font:inherit;text-align:left;cursor:pointer}',
+      '.dsh-sb-member-main:hover{background:var(--dsw-alias-bg-layer-2)}',
+      '.dsh-sb-member-title{flex:1 1 auto;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dsh-sb-x{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:14px}',
+      '.dsh-sb-x:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary)}',
+      '.dsh-sb-member-empty{font-size:11px;color:var(--dsw-alias-label-secondary);padding:6px 2px}',
+      '.dsh-sb-memo{display:flex;flex-direction:column;gap:6px;margin-top:6px}',
+      '.dsh-sb-memo-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--dsw-alias-label-secondary)}',
+      '.dsh-sb-memo-count{font-variant-numeric:tabular-nums}',
+      '.dsh-sb-memo-count.warn{color:#c98a00}',
+      '.dsh-sb-memo-input{width:100%;box-sizing:border-box;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;resize:vertical;font-family:inherit}',
+      '.dsh-sb-memo-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}',
+      '.dsh-sb-memo-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '.dsh-sb-memo-tip{font-size:10px;color:var(--dsw-alias-label-secondary)}',
+      '.dsh-sb-btn.danger{color:var(--dsw-alias-state-error-primary);border-color:rgba(220,80,80,.4)}',
+      '.dsh-sb-btn.primary{background:var(--dsw-alias-brand-primary);color:#fff;border-color:transparent}',
+      '.dsh-sb-btn:disabled{opacity:.45;cursor:not-allowed}',
+      '.dsh-sb-badge{font-size:10px;padding:0 6px;border-radius:999px;background:rgba(77,107,254,.14);color:var(--dsw-alias-brand-primary)}',
+      '.dsh-sb-newgroup{display:flex;gap:8px;align-items:center}',
+      '.dsh-sb-newgroup .dsh-sb-input{flex:1 1 auto}',
+      '.dsh-sb-error{font-size:11px;color:var(--dsw-alias-state-error-primary);white-space:pre-wrap}',
+      '.dsh-sb-ungrouped{margin-top:10px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:10px;border-radius:12px;transition:background .15s ease}',
+      '.dsh-sb-ungrouped.is-over{background:rgba(77,107,254,.06);outline:1px dashed var(--dsw-alias-brand-primary)}',
+      '.dsh-sb-section-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
+      '.dsh-sb-section-name{font-size:12px;font-weight:600}',
+      '.dsh-sb-section-count{font-size:11px;color:var(--dsw-alias-label-secondary)}',
+      '.dsh-sb-section-hint{font-size:10px;color:var(--dsw-alias-label-secondary);margin-left:auto}',
+      '.dsh-sb-ungrouped-body{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}',
+      /* 玻璃皮肤下：工作组卡与未分组区也跟随 */
+      '.dsh-sb[data-skin="glass"] .dsh-sb-group{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.34)}',
+      'body[data-ds-dark-theme] .dsh-sb[data-skin="glass"] .dsh-sb-group{background:rgba(24,34,58,.44);border-color:rgba(170,195,255,.22)}',
       '@media (prefers-reduced-motion: reduce){.dsh-sb-dot{animation:none}.dsh-sb-card{transition:none}.dsh-sb-card:hover{transform:none}.dsh-sb-card[data-bucket="working"]{animation:none}}',
       '@media (max-width: 980px){.dsh-sb-board{flex-direction:column;overflow-x:hidden;overflow-y:auto}.dsh-sb-col{max-width:none;width:100%;min-width:0}}',
     ].join('\n')
@@ -697,11 +808,12 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
 
     function SessionCard(props) {
-      const { row, bucket, now, cursor, onOpen } = props
+      const { row, bucket, now, cursor, onOpen, groups } = props
       const title = typeof row.title === 'string' && row.title.trim() !== '' ? row.title : '(无标题)'
       const turns = row.projectionValues?.sessionStats?.turns
       const at = Number.isFinite(row.updatedAt) ? row.updatedAt : null
       const where = workspaceName(row.cwd)
+      const belongs = Array.isArray(groups) ? groups : []
 
       return h(
         'button',
@@ -709,7 +821,16 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: `dsh-sb-card${cursor ? ' is-cursor' : ''}`,
           'data-bucket': bucket,
-          title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入这个对话`,
+          draggable: true,
+          onDragStart: (event) => {
+            try {
+              event.dataTransfer.setData(DRAG_TYPE, row.id)
+              event.dataTransfer.effectAllowed = 'move'
+            } catch {
+              /* 没有 dataTransfer 就算了 */
+            }
+          },
+          title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入这个对话 · 可拖到工作组`,
           onClick: onOpen,
         },
         h(
@@ -724,46 +845,325 @@ window.__ModuleLoader__.load({
           bucket === 'working' ? h('span', null, '正在跑') : null,
           where ? h('span', { className: 'dsh-sb-card-path' }, where) : null,
           Number.isFinite(turns) && turns > 0 ? h('span', null, `${turns} turns`) : null,
+          belongs.length > 0
+            ? h('span', { className: 'dsh-sb-badge' }, `组 ${belongs.length}`)
+            : null,
           h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
         ),
       )
     }
 
-    function Column(props) {
-      const { bucket, entries, now, onOpen, collapsed, onToggle, cursorId } = props
+    /** 组内一行会话：可拖出去（拖到「未分组」就是移出本组）。 */
+    function MemberRow(props) {
+      const { id, groupId, row, bucket, now, onOpen, onRemove } = props
+      const title = typeof row.title === 'string' && row.title.trim() !== '' ? row.title : '(无标题)'
+      const at = Number.isFinite(row.updatedAt) ? row.updatedAt : null
+
       return h(
         'div',
-        { className: 'dsh-sb-col' },
+        {
+          className: 'dsh-sb-member',
+          draggable: true,
+          onDragStart: (event) => {
+            try {
+              event.dataTransfer.setData(DRAG_TYPE, id)
+              event.dataTransfer.setData(`${DRAG_TYPE}-group`, groupId)
+              event.dataTransfer.effectAllowed = 'move'
+            } catch {
+              /* 没有 dataTransfer 就算了 */
+            }
+          },
+        },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsh-sb-member-main',
+            title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入这个对话`,
+            onClick: onOpen,
+          },
+          h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+          h('span', { className: 'dsh-sb-member-title' }, title),
+          h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
+        ),
+        onRemove
+          ? h(
+              'button',
+              { type: 'button', className: 'dsh-sb-x', title: '从这个工作组移出', onClick: onRemove },
+              '×',
+            )
+          : null,
+      )
+    }
+
+    /**
+     * 工作组卡片：**卡片本身就是工作组**，不再是一个会话。
+     * 单击展开成员与记忆编辑器；会话拖到卡上加入；卡片可被拖拽接收。
+     */
+    function GroupCard(props) {
+      const {
+        group,
+        members,
+        bucket,
+        expanded,
+        cursor,
+        now,
+        onToggle,
+        onOpen,
+        onSaveMemory,
+        onRename,
+        onDelete,
+        onRemoveMember,
+        onDropSession,
+      } = props
+
+      const [over, setOver] = React.useState(false)
+      const [draft, setDraft] = React.useState(group.memory ?? '')
+      const [saving, setSaving] = React.useState(false)
+      const [renaming, setRenaming] = React.useState(false)
+      const [nameDraft, setNameDraft] = React.useState(group.name ?? '')
+      const [confirming, setConfirming] = React.useState(false)
+
+      React.useEffect(() => {
+        setDraft(group.memory ?? '')
+      }, [group.id, group.memory])
+
+      React.useEffect(() => {
+        setNameDraft(group.name ?? '')
+        setRenaming(false)
+        setConfirming(false)
+      }, [group.id, group.name])
+
+      const waiting = members.filter((member) => member.bucket === 'waiting').length
+      const working = members.filter((member) => member.bucket === 'working').length
+      const latest = members.reduce(
+        (max, member) => Math.max(max, Number.isFinite(member.row.updatedAt) ? member.row.updatedAt : 0),
+        0,
+      )
+      const preview = memoryPreview(group.memory)
+      const length = Array.from(draft).length
+      const tooLong = length > 4000
+      const dirty = draft !== (group.memory ?? '')
+
+      const submit = () => {
+        if (saving || tooLong || !dirty) return
+        setSaving(true)
+        Promise.resolve(onSaveMemory(group.id, draft)).finally(() => setSaving(false))
+      }
+
+      return h(
+        'div',
+        {
+          className: `dsh-sb-group${cursor ? ' is-cursor' : ''}${over ? ' is-over' : ''}`,
+          'data-bucket': bucket,
+          onDragOver: (event) => {
+            event.preventDefault()
+            if (!over) setOver(true)
+          },
+          onDragLeave: () => setOver(false),
+          onDrop: (event) => {
+            event.preventDefault()
+            setOver(false)
+            const sid = sessionOfDrag(event)
+            if (sid !== '') onDropSession(group.id, sid)
+          },
+        },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsh-sb-group-head',
+            onClick: onToggle,
+            title: expanded ? '收起这个工作组' : '展开这个工作组',
+          },
+          h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+          renaming
+            ? h('input', {
+                className: 'dsh-sb-group-name-input',
+                value: nameDraft,
+                autoFocus: true,
+                onClick: (event) => event.stopPropagation(),
+                onChange: (event) => setNameDraft(event.target.value),
+                onKeyDown: (event) => {
+                  event.stopPropagation()
+                  if (event.key === 'Enter') {
+                    const name = nameDraft.trim()
+                    if (name !== '') void onRename(group.id, name)
+                    setRenaming(false)
+                  } else if (event.key === 'Escape') {
+                    setNameDraft(group.name ?? '')
+                    setRenaming(false)
+                  }
+                },
+              })
+            : h('span', { className: 'dsh-sb-group-name' }, group.name),
+          h('span', { className: 'dsh-sb-spacer' }),
+          h('span', { className: 'dsh-sb-group-count' }, `${members.length} 个会话`),
+          h('span', { className: 'dsh-sb-chev' }, expanded ? '−' : '+'),
+        ),
         h(
           'div',
-          { className: 'dsh-sb-col-head', title: bucket.hint },
-          h('span', { className: 'dsh-sb-col-name' }, bucket.label),
-          h('span', { className: 'dsh-sb-col-count' }, String(entries.length)),
-          bucket.key === 'older'
-            ? h('button', { className: 'dsh-sb-col-toggle', onClick: onToggle }, collapsed ? '展开' : '收起')
-            : null,
+          { className: 'dsh-sb-group-meta' },
+          waiting > 0 ? h('span', { className: 'dsh-sb-tag waiting' }, `${waiting} 等你`) : null,
+          working > 0 ? h('span', { className: 'dsh-sb-tag working' }, `${working} 在跑`) : null,
+          members.length === 0 ? h('span', { className: 'dsh-sb-tag' }, '把会话拖到这里') : null,
+          latest > 0 ? h('span', { className: 'dsh-sb-when' }, formatAgo(latest, now)) : null,
         ),
-        collapsed
-          ? null
-          : h(
+        preview !== '' ? h('div', { className: 'dsh-sb-group-memo' }, preview) : null,
+        expanded
+          ? h(
               'div',
-              { className: 'dsh-sb-col-body' },
-              entries.length === 0
+              { className: 'dsh-sb-group-body' },
+              members.length === 0
                 ? h(
                     'div',
-                    { className: 'dsh-sb-empty-col' },
-                    bucket.key === 'waiting' ? '没有在等你的' : '这一列是空的',
+                    { className: 'dsh-sb-member-empty' },
+                    '这个工作组还没有会话。把下面「未分组」里的会话拖进来。',
                   )
-                : entries.map((entry) =>
-                    h(SessionCard, {
-                      key: entry.id,
-                      row: entry.row,
-                      bucket: bucket.key,
+                : members.map((member) =>
+                    h(MemberRow, {
+                      key: member.id,
+                      id: member.id,
+                      groupId: group.id,
+                      row: member.row,
+                      bucket: member.bucket,
                       now,
-                      cursor: cursorId === entry.id,
-                      onOpen: () => onOpen(entry.id),
+                      onOpen: () => onOpen(member.id),
+                      onRemove: () => onRemoveMember(group.id, member.id),
                     }),
                   ),
+              h(
+                'div',
+                { className: 'dsh-sb-memo' },
+                h(
+                  'div',
+                  { className: 'dsh-sb-memo-head' },
+                  h('span', null, '共享记忆'),
+                  h(
+                    'span',
+                    { className: length > 3200 ? 'dsh-sb-memo-count warn' : 'dsh-sb-memo-count' },
+                    `${length} / 4000`,
+                  ),
+                ),
+                h('textarea', {
+                  className: 'dsh-sb-memo-input',
+                  value: draft,
+                  rows: 5,
+                  placeholder: '这个工作组的会话每轮都会看到这段文字。写约定、口径、结论，不要写流水账。',
+                  onChange: (event) => setDraft(event.target.value),
+                }),
+                h(
+                  'div',
+                  { className: 'dsh-sb-memo-foot' },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-sb-btn primary',
+                      disabled: saving || tooLong || !dirty,
+                      onClick: submit,
+                    },
+                    saving ? '保存中…' : '保存记忆',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-sb-btn',
+                      disabled: !dirty,
+                      onClick: () => setDraft(group.memory ?? ''),
+                    },
+                    '撤销',
+                  ),
+                  h(
+                    'span',
+                    { className: 'dsh-sb-memo-tip' },
+                    tooLong ? '超过 4000 字符，存不进去' : '保存后下一轮请求生效',
+                  ),
+                  h('span', { className: 'dsh-sb-spacer' }),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-sb-btn',
+                      onClick: () => {
+                        setConfirming(false)
+                        setRenaming(true)
+                      },
+                    },
+                    '重命名',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-sb-btn danger',
+                      onClick: () => {
+                        // 两步：先问一次，再删。删组不删会话（红线）。
+                        if (confirming) void onDelete(group.id)
+                        else setConfirming(true)
+                      },
+                      onBlur: () => setConfirming(false),
+                    },
+                    confirming ? '确认删除？' : '删除工作组',
+                  ),
+                ),
+              ),
+            )
+          : null,
+      )
+    }
+
+    /** 底部「未分组会话」：拖进去 = 从它原来的工作组移出。 */
+    function UngroupedColumn(props) {
+      const { entries, now, onOpen, onDropSession } = props
+      const [over, setOver] = React.useState(false)
+
+      return h(
+        'div',
+        {
+          className: `dsh-sb-ungrouped${over ? ' is-over' : ''}`,
+          onDragOver: (event) => {
+            event.preventDefault()
+            if (!over) setOver(true)
+          },
+          onDragLeave: () => setOver(false),
+          onDrop: (event) => {
+            event.preventDefault()
+            setOver(false)
+            const sid = sessionOfDrag(event)
+            let fromGroup = ''
+            try {
+              fromGroup = event.dataTransfer.getData(`${DRAG_TYPE}-group`)
+            } catch {
+              /* 忽略 */
+            }
+            if (sid !== '') onDropSession(sid, fromGroup)
+          },
+        },
+        h(
+          'div',
+          { className: 'dsh-sb-section-head' },
+          h('span', { className: 'dsh-sb-section-name' }, '未分组会话'),
+          h('span', { className: 'dsh-sb-section-count' }, String(entries.length)),
+          h('span', { className: 'dsh-sb-section-hint' }, '拖到上面的工作组上即可加入'),
+        ),
+        entries.length === 0
+          ? h('div', { className: 'dsh-sb-empty-col' }, '所有会话都在工作组里了。')
+          : h(
+              'div',
+              { className: 'dsh-sb-ungrouped-body' },
+              entries.map((entry) =>
+                h(SessionCard, {
+                  key: entry.id,
+                  row: entry.row,
+                  bucket: entry.bucket,
+                  now,
+                  cursor: false,
+                  groups: entry.groups,
+                  onOpen: () => onOpen(entry.id),
+                }),
+              ),
             ),
       )
     }
@@ -787,6 +1187,11 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState('')
       const [showOlder, setShowOlder] = React.useState(false)
       const [cursor, setCursor] = React.useState(0)
+      const [memory, setMemory] = React.useState({ revision: 0, groups: [], sessionsIndex: {} })
+      const [memoryError, setMemoryError] = React.useState('')
+      const [expanded, setExpanded] = React.useState(() => new Set())
+      const [creating, setCreating] = React.useState(false)
+      const [newGroupName, setNewGroupName] = React.useState('')
 
       const openSession = (sessionId) => {
         // 先切回会话面板，再选中那个会话：两条路都试，缺哪个都不至于点了没反应。
@@ -804,6 +1209,68 @@ window.__ModuleLoader__.load({
           }
         }
       }
+
+      /** 重拉工作组数据：前端唯一的真相来源。 */
+      const reloadMemory = React.useCallback(async () => {
+        try {
+          const value = await memoryRequest('')
+          setMemory({
+            revision: value?.revision ?? 0,
+            groups: Array.isArray(value?.groups) ? value.groups : [],
+            sessionsIndex: value?.sessionsIndex ?? {},
+          })
+          setMemoryError('')
+        } catch (error) {
+          setMemoryError(String(error?.message ?? error))
+        }
+      }, [])
+
+      React.useEffect(() => {
+        void reloadMemory()
+      }, [reloadMemory])
+
+      React.useEffect(() => {
+        if (active) void reloadMemory()
+      }, [active, reloadMemory])
+
+      /** 所有写操作都走这里：失败只记一条消息，不打断看板。 */
+      const mutateMemory = async (run) => {
+        try {
+          await run()
+          await reloadMemory()
+        } catch (error) {
+          setMemoryError(String(error?.message ?? error))
+        }
+      }
+
+      const toggleGroup = (groupId) => {
+        setExpanded((previous) => {
+          const next = new Set(previous)
+          if (next.has(groupId)) next.delete(groupId)
+          else next.add(groupId)
+          return next
+        })
+      }
+
+      const submitNewGroup = () => {
+        const name = newGroupName.trim()
+        if (name === '') return
+        void mutateMemory(async () => {
+          await memoryRequest('/groups', 'POST', { name })
+          setNewGroupName('')
+          setCreating(false)
+        })
+      }
+
+      const saveGroupMemory = (groupId, text) =>
+        mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'PATCH', { memory: text }))
+      const renameGroup = (groupId, name) =>
+        mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'PATCH', { name }))
+      const removeGroup = (groupId) => mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'DELETE'))
+      const addToGroup = (groupId, sessionId) =>
+        mutateMemory(() => memoryRequest(`/groups/${groupId}/sessions/${sessionId}`, 'PUT'))
+      const removeFromGroup = (groupId, sessionId) =>
+        mutateMemory(() => memoryRequest(`/groups/${groupId}/sessions/${sessionId}`, 'DELETE'))
 
       const { buckets, total, matched } = React.useMemo(() => {
         const groups = { waiting: [], working: [], idle: [], ended: [], older: [] }
@@ -831,14 +1298,66 @@ window.__ModuleLoader__.load({
         return { buckets: groups, total: totalCount, matched: matchedCount }
       }, [byId, statuses, query, now])
 
-      const flat = React.useMemo(() => {
-        const list = []
+      /**
+       * 看板现在以「工作组」为单位：组卡按组内最急的会话状态分桶，
+       * 没进任何组的会话落到最下面那段「未分组」里（可拖进组）。
+       */
+      const view = React.useMemo(() => {
+        const needle = query.trim().toLowerCase()
+        const bySession = new Map()
+        for (const bucket of BUCKETS) {
+          for (const entry of buckets[bucket.key] ?? []) bySession.set(entry.id, { ...entry, bucket: bucket.key })
+        }
+
+        const groups = (memory.groups ?? []).map((group) => {
+          const members = (Array.isArray(group.sessions) ? group.sessions : [])
+            .map((sid) => {
+              const entry = bySession.get(sid)
+              return entry ? { id: sid, row: entry.row, bucket: entry.bucket } : null
+            })
+            .filter(Boolean)
+            .sort((a, b) => (Number(b.row.updatedAt) || 0) - (Number(a.row.updatedAt) || 0))
+          return { group, members, bucket: groupBucketOf(members.map((member) => member.bucket)) }
+        })
+
+        const visibleGroups = groups.filter((entry) => {
+          if (needle === '') return true
+          if (String(entry.group.name).toLowerCase().includes(needle)) return true
+          if (String(entry.group.memory ?? '').toLowerCase().includes(needle)) return true
+          return entry.members.some((member) =>
+            `${member.row.title ?? ''} ${member.row.cwd ?? ''}`.toLowerCase().includes(needle),
+          )
+        })
+
+        const grouped = new Set()
+        for (const group of memory.groups ?? []) {
+          for (const sid of Array.isArray(group.sessions) ? group.sessions : []) grouped.add(sid)
+        }
+
+        const groupsById = new Map(groups.map((entry) => [entry.group.id, entry.group]))
+        const ungrouped = []
         for (const bucket of BUCKETS) {
           if (bucket.key === 'older' && !showOlder) continue
-          for (const entry of buckets[bucket.key] ?? []) list.push(entry.id)
+          for (const entry of buckets[bucket.key] ?? []) {
+            if (grouped.has(entry.id)) continue
+            if (needle !== '') {
+              const haystack = `${entry.row.title ?? ''} ${entry.row.cwd ?? ''}`.toLowerCase()
+              if (!haystack.includes(needle)) continue
+            }
+            ungrouped.push({
+              ...entry,
+              bucket: bucket.key,
+              groups: (memory.sessionsIndex?.[entry.id] ?? [])
+                .map((groupId) => groupsById.get(groupId))
+                .filter(Boolean),
+            })
+          }
         }
-        return list
-      }, [buckets, showOlder])
+
+        return { groups: visibleGroups, ungrouped }
+      }, [buckets, memory, query, showOlder])
+
+      const flatGroups = React.useMemo(() => view.groups.map((entry) => entry.group.id), [view])
 
       React.useEffect(() => {
         if (!active) return undefined
@@ -853,14 +1372,14 @@ window.__ModuleLoader__.load({
 
           if (event.key === 'j' || event.key === 'ArrowDown') {
             event.preventDefault()
-            setCursor((value) => Math.min(flat.length - 1, Math.max(0, value + 1)))
+            setCursor((value) => Math.min(flatGroups.length - 1, Math.max(0, value + 1)))
           } else if (event.key === 'k' || event.key === 'ArrowUp') {
             event.preventDefault()
             setCursor((value) => Math.max(0, value - 1))
           } else if (event.key === 'Enter') {
-            if (flat[cursor]) {
+            if (flatGroups[cursor]) {
               event.preventDefault()
-              openSession(flat[cursor])
+              toggleGroup(flatGroups[cursor])
             }
           } else if (event.key === '/') {
             event.preventDefault()
@@ -868,15 +1387,16 @@ window.__ModuleLoader__.load({
             if (input) input.focus()
           } else if (event.key === 'Escape') {
             setQuery('')
+            setExpanded(new Set())
           }
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-      }, [active, flat, cursor])
+      }, [active, flatGroups, cursor])
 
       React.useEffect(() => {
-        if (cursor > flat.length - 1) setCursor(Math.max(0, flat.length - 1))
-      }, [flat, cursor])
+        if (cursor > flatGroups.length - 1) setCursor(Math.max(0, flatGroups.length - 1))
+      }, [flatGroups, cursor])
 
       const counts = {
         waiting: buckets.waiting.length,
@@ -885,7 +1405,10 @@ window.__ModuleLoader__.load({
         ended: buckets.ended.length,
         older: buckets.older.length,
       }
-      const cursorId = flat[cursor] ?? null
+      const groupCounts = { waiting: 0, working: 0, idle: 0, ended: 0, empty: 0 }
+      for (const entry of view.groups) groupCounts[entry.bucket] = (groupCounts[entry.bucket] ?? 0) + 1
+      const cursorId = flatGroups[cursor] ?? null
+      const nothingMatched = view.groups.length === 0 && view.ungrouped.length === 0
       // 立绘跟着看板状态换表情。
       // 注意素材真相（来自桌宠会话的实测）：idle/busy/alert 是 256×256 方形头像，
       // base/chew/hover 是 ~397×420 全身立绘；alert 还带一条 logo 横幅，放大了很怪，
@@ -906,10 +1429,10 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'dsh-sb-pills' },
-            h('span', { className: 'dsh-sb-pill working' }, '工作中', h('b', null, String(counts.working))),
-            h('span', { className: 'dsh-sb-pill waiting' }, '等你回答', h('b', null, String(counts.waiting))),
-            h('span', { className: 'dsh-sb-pill' }, '闲置', h('b', null, String(counts.idle))),
-            h('span', { className: 'dsh-sb-pill' }, '结束', h('b', null, String(counts.ended))),
+            h('span', { className: 'dsh-sb-pill' }, '工作组', h('b', null, String(view.groups.length))),
+            h('span', { className: 'dsh-sb-pill waiting' }, '等你回答', h('b', null, String(groupCounts.waiting))),
+            h('span', { className: 'dsh-sb-pill working' }, '在跑', h('b', null, String(groupCounts.working))),
+            h('span', { className: 'dsh-sb-pill' }, '未分组', h('b', null, String(view.ungrouped.length))),
             counts.older > 0
               ? h(
                   'button',
@@ -917,19 +1440,44 @@ window.__ModuleLoader__.load({
                   showOlder ? `收起更早 ${counts.older}` : `更早 ${counts.older}`,
                 )
               : null,
+            h(
+              'button',
+              { className: 'dsh-sb-btn', onClick: () => setCreating((value) => !value) },
+              creating ? '取消' : '+ 工作组',
+            ),
             h(PetToggle),
           ),
+          creating
+            ? h(
+                'div',
+                { className: 'dsh-sb-newgroup' },
+                h('input', {
+                  className: 'dsh-sb-input',
+                  placeholder: '新工作组名字（≤40 字）',
+                  value: newGroupName,
+                  autoFocus: true,
+                  onChange: (event) => setNewGroupName(event.target.value),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') submitNewGroup()
+                  },
+                }),
+                h('button', { className: 'dsh-sb-btn primary', onClick: submitNewGroup }, '创建'),
+              )
+            : null,
           h('input', {
             className: 'dsh-sb-input',
-            placeholder: '按标题或目录过滤…（/ 聚焦）',
+            placeholder: '按工作组名 / 会话标题 / 目录过滤…（/ 聚焦）',
             value: query,
             onChange: (event) => setQuery(event.target.value),
           }),
           h(
             'span',
             { className: 'dsh-sb-sub' },
-            `共 ${total} 个会话 · 状态全自动（24 小时分界）· 皮肤在「设置 → 外观 / 皮肤」里切`,
+            `共 ${total} 个会话 · ${view.groups.length} 个工作组 · 状态全自动（24 小时分界）· 皮肤在「设置 → 皮肤」里切`,
           ),
+          memoryError !== ''
+            ? h('div', { className: 'dsh-sb-error' }, `工作组：${memoryError}`)
+            : null,
         ),
 
         total === 0
@@ -943,33 +1491,89 @@ window.__ModuleLoader__.load({
                   ? `读取会话索引失败：store 里有 ${storeItemCount} 条会话，但 byId 是空的。把这句话发给我。`
                   : '还没有会话。发第一条消息后这里就会出现它的进程状态。',
             )
-          : matched === 0 && query.trim() !== ''
-            ? h('div', { className: 'dsh-sb-empty' }, `没有匹配「${query.trim()}」的会话。`)
+          : nothingMatched && query.trim() !== ''
+            ? h('div', { className: 'dsh-sb-empty' }, `没有匹配「${query.trim()}」的工作组或会话。`)
             : h(
-                'div',
-                { className: 'dsh-sb-board' },
-                BUCKETS.filter((bucket) => bucket.key !== 'older' || showOlder || counts.older > 0).map((bucket) =>
-                  h(Column, {
-                    key: bucket.key,
-                    bucket,
-                    entries: buckets[bucket.key] ?? [],
-                    now,
-                    onOpen: openSession,
-                    collapsed: bucket.key === 'older' ? !showOlder : false,
-                    onToggle: () => setShowOlder((value) => !value),
-                    cursorId,
+                React.Fragment,
+                null,
+                h(
+                  'div',
+                  { className: 'dsh-sb-board' },
+                  GROUP_BUCKETS.filter((bucket) => (groupCounts[bucket.key] ?? 0) > 0).map((bucket) => {
+                    const entries = view.groups.filter((entry) => entry.bucket === bucket.key)
+                    return h(
+                      'div',
+                      { className: 'dsh-sb-col', key: bucket.key },
+                      h(
+                        'div',
+                        { className: 'dsh-sb-col-head', title: bucket.hint },
+                        h('span', { className: 'dsh-sb-col-name' }, bucket.label),
+                        h('span', { className: 'dsh-sb-col-count' }, String(entries.length)),
+                      ),
+                      h(
+                        'div',
+                        { className: 'dsh-sb-col-body' },
+                        entries.map((entry) =>
+                          h(GroupCard, {
+                            key: entry.group.id,
+                            group: entry.group,
+                            members: entry.members,
+                            bucket: entry.bucket,
+                            expanded: expanded.has(entry.group.id),
+                            cursor: cursorId === entry.group.id,
+                            now,
+                            onToggle: () => toggleGroup(entry.group.id),
+                            onOpen: openSession,
+                            onSaveMemory: saveGroupMemory,
+                            onRename: renameGroup,
+                            onDelete: () => removeGroup(entry.group.id),
+                            onRemoveMember: removeFromGroup,
+                            onDropSession: addToGroup,
+                          }),
+                        ),
+                      ),
+                    )
                   }),
+                  view.groups.length === 0
+                    ? h(
+                        'div',
+                        { className: 'dsh-sb-col' },
+                        h(
+                          'div',
+                          { className: 'dsh-sb-col-head' },
+                          h('span', { className: 'dsh-sb-col-name' }, '工作组'),
+                          h('span', { className: 'dsh-sb-col-count' }, '0'),
+                        ),
+                        h(
+                          'div',
+                          { className: 'dsh-sb-col-body' },
+                          h(
+                            'div',
+                            { className: 'dsh-sb-empty-col' },
+                            '还没有工作组 —— 点右上角「+ 工作组」建一个，再把会话拖进去。',
+                          ),
+                        ),
+                      )
+                    : null,
                 ),
+                h(UngroupedColumn, {
+                  entries: view.ungrouped,
+                  now,
+                  onOpen: openSession,
+                  onDropSession: (sessionId, fromGroup) => {
+                    if (fromGroup !== '') void removeFromGroup(fromGroup, sessionId)
+                  },
+                }),
               ),
 
         h(
           'div',
           { className: 'dsh-sb-foot' },
-          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'j'), h('span', { className: 'dsh-sb-kbd' }, 'k'), ' 移动'),
-          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Enter'), ' 进入对话'),
+          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'j'), h('span', { className: 'dsh-sb-kbd' }, 'k'), ' 选工作组'),
+          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Enter'), ' 展开/收起'),
           h('span', null, h('span', { className: 'dsh-sb-kbd' }, '/'), ' 搜索'),
-          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Esc'), ' 清空搜索'),
-          h('span', null, '闲置/结束 24 小时分界 · 更早超过 7 天'),
+          h('span', null, h('span', { className: 'dsh-sb-kbd' }, 'Esc'), ' 清空'),
+          h('span', null, '会话拖到工作组上加入 · 拖回「未分组」移出 · 每组最多 3 个会话归属'),
         ),
       )
     }

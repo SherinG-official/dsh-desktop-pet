@@ -199,15 +199,20 @@ GET    /memory/session/<sid>                → 该会话所属组（角标用�
 ## 用法
 
 - 侧边栏点「会话进程」图标（三竖条）→ 中央区域变成看板
-- 点任意卡片 → 直接进入那个对话
-- `j` / `k` 移动，`Enter` 进入，`/` 聚焦搜索，`Esc` 清空搜索
-- 侧边栏图标上的**樱粉点** = 有会话卡在等你回答
+- **看板的单位是「工作组」**：卡片显示组名、组内会话数、聚合状态（等你回答 / 在跑）、记忆首行
+- 点卡片的标题行 → **原地展开**：成员会话列表 + 共享记忆编辑器（不换页）
+- `+ 工作组` 建组；展开后 `重命名` / `删除工作组`（删除两步确认，只删组不删会话）
+- 把**未分组会话**拖到组卡上 → 加入；把组内会话拖回底部「未分组」→ 移出
+- `j` / `k` 选工作组，`Enter` 展开/收起，`/` 搜索，`Esc` 清空并收起
+- 侧边栏图标上的**樱粉点** = 有工作组里的会话卡在等你回答
 
 ## 数据
 
 ```
 $DSH_HOME/dsh-workbench/workbench.json           # v1 工作项（界面不展示，目录名沿用）
 $DSH_HOME/dsh-workbench/workbench.json.bak
+$DSH_HOME/dsh-session-board/memory.json          # 工作组 + 共享记忆
+$DSH_HOME/dsh-session-board/memory.json.bak
 $DSH_HOME/dsh-session-board/skins/<id>/skin.json # 导入的皮肤（token 表 + 元数据）
 $DSH_HOME/dsh-session-board/skins/<id>/skin.css  # 可选，全局 CSS
 $DSH_HOME/dsh-session-board/skins-state.json     # { active: '<皮肤 id>' }
