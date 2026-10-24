@@ -552,7 +552,9 @@ window.__ModuleLoader__.load({
       '.dsh-sb-group[data-bucket="waiting"]{border-left:3px solid #ff9ec4}',
       '.dsh-sb-group[data-bucket="working"]{border-left:3px solid var(--dsw-alias-state-success-primary)}',
       '.dsh-sb-group[data-bucket="empty"]{border-style:dashed}',
-      '.dsh-sb-group-head{display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}',
+      '.dsh-sb-group-head{display:flex;flex-direction:column;gap:6px}',
+      '.dsh-sb-group-headbtn{display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}',
+      '.dsh-sb-rename{display:flex;align-items:center;gap:6px}',
       '.dsh-sb-group-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dsh-sb-group-name-input{flex:1 1 auto;min-width:0;font:inherit;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-brand-primary);border-radius:6px;padding:1px 6px}',
       '.dsh-sb-group-count{font-size:11px;color:var(--dsw-alias-label-secondary);flex:0 0 auto}',
@@ -980,6 +982,15 @@ window.__ModuleLoader__.load({
         Promise.resolve(onSaveMemory(group.id, draft)).finally(() => setSaving(false))
       }
 
+      /** 确认改名：空名字或没改就只关输入框，不发请求。 */
+      const commitRename = () => {
+        const name = nameDraft.trim()
+        if (name !== '' && name !== (group.name ?? '') && typeof onRename === 'function') {
+          void onRename(group.id, name)
+        }
+        setRenaming(false)
+      }
+
       return h(
         'div',
         {
@@ -1002,37 +1013,58 @@ window.__ModuleLoader__.load({
               }),
         },
         h(
-          'button',
-          {
-            type: 'button',
-            className: 'dsh-sb-group-head',
-            onClick: onToggle,
-            title: expanded ? '收起这个工作组' : '展开这个工作组',
-          },
-          h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+          'div',
+          { className: 'dsh-sb-group-head' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsh-sb-group-headbtn',
+              onClick: onToggle,
+              title: expanded ? '收起这个工作组' : '展开这个工作组',
+            },
+            h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+            h('span', { className: 'dsh-sb-group-name' }, group.name),
+            h('span', { className: 'dsh-sb-spacer' }),
+            h('span', { className: 'dsh-sb-group-count' }, `${members.length} 个会话`),
+            h('span', { className: 'dsh-sb-chev' }, expanded ? '−' : '+'),
+          ),
+          // ⚠️ 重命名输入框不能嵌在 <button> 里：按钮内的 input 会吞掉/转发
+          // 键盘事件，Enter 永远到不了它自己的 onKeyDown —— 表现就是"一直可编辑"。
           renaming
-            ? h('input', {
-                className: 'dsh-sb-group-name-input',
-                value: nameDraft,
-                autoFocus: true,
-                onClick: (event) => event.stopPropagation(),
-                onChange: (event) => setNameDraft(event.target.value),
-                onKeyDown: (event) => {
-                  event.stopPropagation()
-                  if (event.key === 'Enter') {
-                    const name = nameDraft.trim()
-                    if (name !== '') void onRename(group.id, name)
-                    setRenaming(false)
-                  } else if (event.key === 'Escape') {
-                    setNameDraft(group.name ?? '')
-                    setRenaming(false)
-                  }
-                },
-              })
-            : h('span', { className: 'dsh-sb-group-name' }, group.name),
-          h('span', { className: 'dsh-sb-spacer' }),
-          h('span', { className: 'dsh-sb-group-count' }, `${members.length} 个会话`),
-          h('span', { className: 'dsh-sb-chev' }, expanded ? '−' : '+'),
+            ? h(
+                'div',
+                { className: 'dsh-sb-rename' },
+                h('input', {
+                  className: 'dsh-sb-group-name-input',
+                  value: nameDraft,
+                  autoFocus: true,
+                  onChange: (event) => setNameDraft(event.target.value),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      commitRename()
+                    } else if (event.key === 'Escape') {
+                      setNameDraft(group.name ?? '')
+                      setRenaming(false)
+                    }
+                  },
+                }),
+                h('button', { type: 'button', className: 'dsh-sb-btn primary', onClick: commitRename }, '确定'),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsh-sb-btn',
+                    onClick: () => {
+                      setNameDraft(group.name ?? '')
+                      setRenaming(false)
+                    },
+                  },
+                  '取消',
+                ),
+              )
+            : null,
         ),
         h(
           'div',
