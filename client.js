@@ -203,17 +203,52 @@ window.__ModuleLoader__.load({
       if (existing !== null) existing.remove()
     }
 
+    /**
+     * Fairy（视觉只有皮肤层）：终端气质 —— 深紫底、洋红/青双色强调、等宽字体。
+     * 不含任何游戏素材/语音（Fairy-DSH 的第三方素材不可再分发）。
+     */
+    const FAIRY_TOKENS = {
+      ...(WHALE_TOKENS || {}),
+      '--dsw-alias-brand-primary': '#ff7ad9',
+      '--dsw-alias-bg-base': '#0d0b16',
+      '--dsw-alias-bg-layer-1': '#151024',
+      '--dsw-alias-bg-layer-2': '#1c1530',
+      '--dsw-alias-border-l1': 'rgba(255,122,217,.22)',
+      '--dsw-alias-border-l2': 'rgba(122,240,255,.28)',
+      '--dsw-alias-label-primary': '#f4ecff',
+      '--dsw-alias-label-secondary': '#b9a9d6',
+    }
+
+    const FAIRY_CSS = `
+      html[data-dsh-sb-skin="fairy"] { --dsh-sb-material: terminal; }
+      html[data-dsh-sb-skin="fairy"] body { font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace; }
+      html[data-dsh-sb-skin="fairy"] [data-composer-card] { border-color: rgba(122,240,255,.28); box-shadow: 0 0 0 1px rgba(255,122,217,.12) inset, 0 18px 48px -28px rgba(255,122,217,.5); }
+      html[data-dsh-sb-skin="fairy"] [class*="_frame"], html[data-dsh-sb-skin="fairy"] [class*="_sidebarCol"] { background-image: linear-gradient(180deg, rgba(255,122,217,.05), transparent 40%); }
+    `.trim()
+
     const SKINS = [
-      { id: 'whale', name: '鲸蓝娘', accent: '#3b6ff0', tagline: '鲸蓝实色 · 安静', tokens: WHALE_TOKENS, css: '' },
+      { id: 'whale', name: '鲸蓝娘', accent: '#3b6ff0', tagline: '鲸蓝实色 · 安静', material: 'solid', wallpaper: false, tokens: WHALE_TOKENS, css: '' },
       {
         id: 'glass',
         name: '液态玻璃',
         accent: '#7aa2ff',
         tagline: '冷调蓝紫 · 磨砂玻璃 · 悬浮',
+        material: 'glass',
+        wallpaper: true,
         tokens: GLASS_TOKENS,
         css: GLASS_GLOBAL_CSS,
       },
-      { id: 'native', name: '原生', accent: '', tagline: '宿主默认外观', tokens: null, css: '' },
+      {
+        id: 'fairy',
+        name: 'Fairy',
+        accent: '#ff7ad9',
+        tagline: '终端风 · 洋红/青 · 壁纸适配',
+        material: 'terminal',
+        wallpaper: true,
+        tokens: FAIRY_TOKENS,
+        css: FAIRY_CSS,
+      },
+      { id: 'native', name: '原生', accent: '', tagline: '宿主默认外观', material: 'native', wallpaper: false, tokens: null, css: '' },
     ]
 
     /* ---- 工作组（host 持久化） ------------------------------------------ */
