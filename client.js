@@ -860,11 +860,26 @@ window.__ModuleLoader__.load({
             console.warn('[dsh-session-board] selectPanel 失败：', lastError)
             continue
           }
-          // selectPanel 不抛 ≠ 真的切过去了：250ms 后看我们的面板根节点在不在。
+          // selectPanel 不抛 ≠ 真的切过去了。两种失败都算：
+          //   1) 面板根节点根本没挂载
+          //   2) 挂载了但不可见（宽高为 0 / 被隐藏）
+          const visible = () => {
+            const node = document.querySelector('.dsh-sb')
+            if (node === null) return false
+            const rect = node.getBoundingClientRect()
+            return rect.width > 0 && rect.height > 0
+          }
           setTimeout(() => {
-            if (document.querySelector('.dsh-sb') !== null) return
-            if (clickSidebarEntry()) return
-            lastError = 'selectPanel 调用成功，但看板没有渲染'
+            if (visible()) return
+            if (clickSidebarEntry()) {
+              setTimeout(() => {
+                if (visible()) return
+                lastError = '调用了 layout.selectPanel，但看板没有显示（面板已挂载却不可见）'
+                fail()
+              }, 400)
+              return
+            }
+            lastError = '调用了 layout.selectPanel，但看板没有显示，且找不到侧边栏入口'
             fail()
           }, 250)
           return true
