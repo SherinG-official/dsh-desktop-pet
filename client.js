@@ -579,15 +579,12 @@ window.__ModuleLoader__.load({
       '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
       // 右侧面板容器：占满可用高度、窄宽度下按单列排。
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
-      '.dsh-sb-pane .dsh-sb-board{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px;overflow:visible}',
-      '.dsh-sb-pane .dsh-sb-col{flex:1 1 200px;min-width:180px;max-width:none;width:auto}',
-      /* 未分组：换到下一行、占满整行，与上面的列左边缘对齐 */
-      '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:1 1 100%;margin-top:6px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:6px}',
-      /* 头部：标题居左，药丸 + 搜索挤到右侧同一行 */
-      '.dsh-sb-pane .dsh-sb-head{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px}',
-      '.dsh-sb-pane .dsh-sb-head .dsh-sb-title{flex:0 0 auto}',
-      '.dsh-sb-pane .dsh-sb-pills{margin-left:auto;flex-wrap:wrap;gap:4px;justify-content:flex-end}',
-      '.dsh-sb-pane .dsh-sb-input{flex:0 1 170px;min-width:120px;width:auto}',
+      '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
+      '.dsh-sb-pane .dsh-sb-col{max-width:none;min-width:0;width:100%}',
+      /* 紧凑密度：右栏 ~400px，所有间距/字号各缩一档，头部改为纵向堆叠 */
+      '.dsh-sb-pane .dsh-sb{font-size:12px}',
+      '.dsh-sb-pane .dsh-sb-head{flex-direction:column;align-items:stretch;gap:6px;padding:8px 10px}',
+      '.dsh-sb-pane .dsh-sb-head .dsh-sb-title{font-size:14px}',
       '.dsh-sb-pane .dsh-sb-head .dsh-sb-pet{width:26px;height:26px}',
       '.dsh-sb-pane .dsh-sb-pills{flex-wrap:wrap;gap:4px;justify-content:flex-start}',
       '.dsh-sb-pane .dsh-sb-pill{font-size:10px;padding:1px 7px;line-height:1.6}',
@@ -1993,7 +1990,7 @@ window.__ModuleLoader__.load({
                 view.ungrouped.length > 0
                   ? h(
                       'div',
-                      { className: 'dsh-sb-col dsh-sb-col-ungrouped', key: 'ungrouped' },
+                      { className: 'dsh-sb-col', key: 'ungrouped' },
                       h(
                         'div',
                         { className: 'dsh-sb-col-head' },
