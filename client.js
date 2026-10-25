@@ -291,13 +291,18 @@ window.__ModuleLoader__.load({
      * 哪些工作组默认展开？
      *
      * 用户的要求：**正在工作的、刚干完的，不要折叠** —— 否则每次都要多点一下。
-     * 所以 waiting / working 一律展开；刚结束（15 分钟内）也展开。
-     * 用户自己点过的则以显式覆盖为准（见 Panel 里的 overrides）。
+     *
+     * 注意"刚干完"不等于 `ended`：一条会话停下来后先落进 **idle**（24 小时内），
+     * 24 小时后才变 ended。所以这里不能只判 ended，必须按"最近活动"判 ——
+     * 否则 3 分钟前刚跑完的组仍然会收起（实测踩过）。
+     *
+     * 规则：waiting / working 一律展开；最近 15 分钟内有活动的一律展开。
+     * 用户自己点过的以显式覆盖为准（见 Panel 里的 overrides）。
      */
     const AUTO_EXPAND_FRESH_MS = 15 * 60 * 1000
     function shouldAutoExpand(bucket, latest, now) {
       if (bucket === 'waiting' || bucket === 'working') return true
-      return bucket === 'ended' && latest > 0 && now - latest <= AUTO_EXPAND_FRESH_MS
+      return latest > 0 && now - latest <= AUTO_EXPAND_FRESH_MS
     }
 
     /** 伪工作组的 id：不属于任何组的会话，全部挂在这张「未分组」卡上（不可改名/删除/写记忆）。 */
