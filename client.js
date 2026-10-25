@@ -928,12 +928,21 @@ window.__ModuleLoader__.load({
         h('span', null, '会话进程'),
       )
     }
+    /** 右侧面板 tab 的 id / kind（照抄 dsh-chemflow 的两段式做法）。 */
+    const TAB_ID = 'dsh-session-board'
+    const TAB_KIND = 'session-board'
+
+    /** tab 类型定义：类型必须**立即**注册，打开逻辑不能等 body 挂载。 */
+    function boardTabDefinition() {
+      return { id: TAB_ID, kind: TAB_KIND, priority: 'extension', title: () => '会话进程' }
+    }
+
     /** 打开右侧面板的「会话进程」tab（不切主面板、不影响当前会话）。 */
     function openBoardPane(ctx) {
       const sidebar = ctx?.get?.('sidebarRight') ?? ctx?.sidebarRight
       if (sidebar !== undefined && sidebar !== null && typeof sidebar.openTab === 'function') {
         try {
-          sidebar.openTab(PANEL_ID)
+          sidebar.openTab(TAB_KIND)
           return true
         } catch (error) {
           console.warn('[dsh-session-board] openTab 失败：', error?.message ?? error)
@@ -953,6 +962,21 @@ window.__ModuleLoader__.load({
         /* 忽略 */
       }
       return false
+    }
+
+    /** 头部图标（「结构」同一排）：打开右侧面板 tab。 */
+    function HeaderBoardIcon(props) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-sb-headbtn',
+          title: '会话进程',
+          'aria-label': '会话进程',
+          onClick: () => openBoardPane(props?.ctx),
+        },
+        h(WhaleTail, { size: 15 }),
+      )
     }
 
     /** 右侧面板里的看板容器。 */
@@ -2237,6 +2261,7 @@ window.__ModuleLoader__.load({
 
       const SettingsEntry = () => React.createElement(SettingsPage)
       const PaneEntry = (props) => React.createElement(RightPaneBoard, { ...props, ctx })
+      const HeaderEntry = (props) => React.createElement(HeaderBoardIcon, { ...props, ctx })
 
       // 只保留「设置 → 皮肤」一件事放在常规座位。
       slots.inject('settings.section', () =>
@@ -2244,8 +2269,22 @@ window.__ModuleLoader__.load({
       )
 
       // 会话进程本体：右侧面板的一个 tab（不切主面板、不影响当前会话）。
+      // 类型先注册（tabs.register），body 再挂到 key = TAB_ID 上，最后 openTab(kind)。
+      ctx.inject(['sidebarRightTabs'], (scoped) => {
+        const tabs = scoped.sidebarRightTabs
+        if (tabs === undefined || tabs === null || typeof tabs.register !== 'function') {
+          console.warn('[dsh-session-board] 没有 sidebarRightTabs 服务，右侧 tab 不会注册')
+          return
+        }
+        scoped.effect(() => tabs.register(boardTabDefinition()), 'dsh-session-board: right tab type')
+      })
       slots.inject('sidebar.right.pane.tab', () =>
-        slots.register({ name: 'sidebar.right.pane.tab', key: PANEL_ID, label: '会话进程' }, PaneEntry),
+        slots.register({ name: 'sidebar.right.pane.tab', key: TAB_ID }, PaneEntry),
+      )
+
+      // 入口：「结构」同一排的头部图标。
+      slots.inject('conversation.session.header.utilities', () =>
+        slots.register({ name: 'conversation.session.header.utilities', id: 'session-board', order: 20, label: '会话进程' }, HeaderEntry),
       )
     }
 
