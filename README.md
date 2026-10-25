@@ -153,23 +153,34 @@ text: typeof section.text === "function" ? section.text(context) : section.text
 
 ### 数据与上限
 
-`$DSH_HOME/dsh-session-board/memory.json`（与皮肤同目录）
+**记忆正文不再进 JSON**：每个工作组一个 Markdown 文件，放在
+`$DSH_HOME/dsh-session-board/memory/<groupId>.md`；`memory.json` 只留元数据
+（名字、颜色、成员、时间）。
 
 ```jsonc
+// memory.json
 { "version": 1, "revision": 7,
-  "groups": [{ "id": "grp_…", "name": "化学实验室", "color": "#4f8cc9", "order": 10,
-               "memory": "…", "sessions": ["session-…"], "createdAt": 0, "updatedAt": 0 }] }
+  "groups": [{ "id": "grp_…", "name": "化学实验室", "color": "#4f8cc9",
+               "order": 10, "memory": "", "sessions": ["session-…"] }] }
 ```
 
 | 规则 | 值 | 行为 |
 | --- | --- | --- |
-| 单组记忆 | 4000 字符 | 超了**拒绝保存**并报错（不静默截断） |
-| 注入总量 | 8000 字符 | 超了只注入前 N 组，并注明「记忆已截断」 |
+| 记忆文件 | 64k 字符 | 超了**从最旧的整行开始丢**（滚动） |
+| 每组注入摘录 | 1500 字符（取**最新**尾部） | 文件再长，进上下文的也只有这一段 + 文件路径 |
+| 注入总量 | 4000 字符 | 超了只注入前 N 组，并注明「记忆已截断」 |
 | 每组会话数 | 200 | 超了拒绝 |
 | 一个会话挂几组 | **3** | 第 4 个直接拒绝（`GROUPS_PER_SESSION_LIMIT`） |
 | 工作组总数 | 50 | 超了拒绝 |
 | 组名 | 40 字符 | 超了拒绝 |
 | 子代理会话 | — | `subagent-` / `child-` / `delegate-` 一律拒绝入组 |
+
+### 会话自己写记忆
+
+注册了 `workgroup_note` 工具（`lib/memory/tools.js`）：会话在得出阶段性结论时调用一次，
+内容以 `- [模型] yyyy-MM-dd HH:mm …` 追加进对应工作组的 `.md`。注入段落末尾也会提醒它这么做。
+
+工作台界面**不显示记忆正文**，只给文件路径 + 「打开 / 复制路径」；记忆再长也不挤占界面。
 
 注入位置 **order 1500**（工具说明 1000–1200 之后、运行环境 10000 之前），渲染成：
 

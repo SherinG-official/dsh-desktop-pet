@@ -244,6 +244,15 @@ window.__ModuleLoader__.load({
       return line ?? ''
     }
 
+    /** 路径太长：从 `dsh-session-board` 开始显示，前面用省略号。 */
+    function shortPath(target) {
+      const text = String(target ?? '')
+      if (text === '') return ''
+      const marker = 'dsh-session-board'
+      const index = text.indexOf(marker)
+      return index === -1 ? text : `…${text.slice(index)}`
+    }
+
     /** 从拖拽事件里取出会话 id。 */
     function sessionOfDrag(event) {
       try {
@@ -276,6 +285,19 @@ window.__ModuleLoader__.load({
         if ((GROUP_RANK[bucket] ?? 9) < (GROUP_RANK[best] ?? 9)) best = bucket
       }
       return best
+    }
+
+    /**
+     * 哪些工作组默认展开？
+     *
+     * 用户的要求：**正在工作的、刚干完的，不要折叠** —— 否则每次都要多点一下。
+     * 所以 waiting / working 一律展开；刚结束（15 分钟内）也展开。
+     * 用户自己点过的则以显式覆盖为准（见 Panel 里的 overrides）。
+     */
+    const AUTO_EXPAND_FRESH_MS = 15 * 60 * 1000
+    function shouldAutoExpand(bucket, latest, now) {
+      if (bucket === 'waiting' || bucket === 'working') return true
+      return bucket === 'ended' && latest > 0 && now - latest <= AUTO_EXPAND_FRESH_MS
     }
 
     /** 伪工作组的 id：不属于任何组的会话，全部挂在这张「未分组」卡上（不可改名/删除/写记忆）。 */
@@ -579,6 +601,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-memo-input{width:100%;box-sizing:border-box;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.6;resize:vertical;font-family:inherit}',
       '.dsh-sb-memo-input:focus{outline:none;border-color:var(--dsw-alias-brand-primary)}',
       '.dsh-sb-memo-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+      '.dsh-sb-memo-file{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
+      '.dsh-sb-memo-path{flex:1 1 180px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:2px 6px}',
       '.dsh-sb-memo-tip{font-size:10px;color:var(--dsw-alias-label-secondary)}',
       '.dsh-sb-btn.danger{color:var(--dsw-alias-state-error-primary);border-color:rgba(220,80,80,.4)}',
       '.dsh-sb-btn.primary{background:var(--dsw-alias-brand-primary);color:#fff;border-color:transparent}',
@@ -940,7 +964,7 @@ window.__ModuleLoader__.load({
         now,
         onToggle,
         onOpen,
-        onSaveMemory,
+        onOpenFile,
         onRename,
         onDelete,
         onRemoveMember,
@@ -949,15 +973,9 @@ window.__ModuleLoader__.load({
       } = props
 
       const [over, setOver] = React.useState(false)
-      const [draft, setDraft] = React.useState(group.memory ?? '')
-      const [saving, setSaving] = React.useState(false)
       const [renaming, setRenaming] = React.useState(false)
       const [nameDraft, setNameDraft] = React.useState(group.name ?? '')
       const [confirming, setConfirming] = React.useState(false)
-
-      React.useEffect(() => {
-        setDraft(group.memory ?? '')
-      }, [group.id, group.memory])
 
       React.useEffect(() => {
         setNameDraft(group.name ?? '')
@@ -971,16 +989,7 @@ window.__ModuleLoader__.load({
         (max, member) => Math.max(max, Number.isFinite(member.row.updatedAt) ? member.row.updatedAt : 0),
         0,
       )
-      const preview = memoryPreview(group.memory)
-      const length = Array.from(draft).length
-      const tooLong = length > 4000
-      const dirty = draft !== (group.memory ?? '')
-
-      const submit = () => {
-        if (saving || tooLong || !dirty) return
-        setSaving(true)
-        Promise.resolve(onSaveMemory(group.id, draft)).finally(() => setSaving(false))
-      }
+      const preview = group.memoryPreview ?? memoryPreview(group.memory)
 
       /** 确认改名：空名字或没改就只关输入框，不发请求。 */
       const commitRename = () => {
@@ -1102,82 +1111,83 @@ window.__ModuleLoader__.load({
               pseudo
                 ? null
                 : h(
-                'div',
-                { className: 'dsh-sb-memo' },
-                h(
-                  'div',
-                  { className: 'dsh-sb-memo-head' },
-                  h('span', null, '共享记忆'),
-                  h(
-                    'span',
-                    { className: length > 3200 ? 'dsh-sb-memo-count warn' : 'dsh-sb-memo-count' },
-                    `${length} / 4000`,
+                    'div',
+                    { className: 'dsh-sb-memo' },
+                    h(
+                      'div',
+                      { className: 'dsh-sb-memo-head' },
+                      h('span', null, '记忆文件'),
+                      h('span', { className: 'dsh-sb-memo-count' }, `${group.memorySize ?? 0} 字`),
+                    ),
+                    // 记忆正文不在界面里铺开：只给文件路径 + 打开/复制。
+                    // 文件本身可以很长，注入侧只取尾部摘录（见 lib/memory/model.js）。
+                    h(
+                      'div',
+                      { className: 'dsh-sb-memo-file' },
+                      h(
+                        'code',
+                        { className: 'dsh-sb-memo-path', title: group.memoryPath ?? '' },
+                        shortPath(group.memoryPath),
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-sb-btn',
+                          onClick: () => onOpenFile(group.id),
+                          title: '用系统默认程序打开这个 Markdown 文件',
+                        },
+                        '打开',
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-sb-btn',
+                          onClick: () => {
+                            try {
+                              void navigator.clipboard?.writeText(group.memoryPath ?? '')
+                            } catch {
+                              /* 剪贴板不可用就算了 */
+                            }
+                          },
+                        },
+                        '复制路径',
+                      ),
+                    ),
+                    h(
+                      'div',
+                      { className: 'dsh-sb-memo-foot' },
+                      h('span', { className: 'dsh-sb-memo-tip' }, '会话会自动把结论同步进这个文件；只有尾部摘录进上下文'),
+                      h('span', { className: 'dsh-sb-spacer' }),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-sb-btn',
+                          onClick: () => {
+                            setConfirming(false)
+                            setRenaming(true)
+                          },
+                        },
+                        '重命名',
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'dsh-sb-btn danger',
+                          onClick: () => {
+                            // 两步：先问一次，再删。删组不删会话（红线）。
+                            if (confirming) void onDelete(group.id)
+                            else setConfirming(true)
+                          },
+                          onBlur: () => setConfirming(false),
+                        },
+                        confirming ? '确认删除？' : '删除工作组',
+                      ),
+                    ),
                   ),
-                ),
-                h('textarea', {
-                  className: 'dsh-sb-memo-input',
-                  value: draft,
-                  rows: 5,
-                  placeholder: '这个工作组的会话每轮都会看到这段文字。写约定、口径、结论，不要写流水账。',
-                  onChange: (event) => setDraft(event.target.value),
-                }),
-                h(
-                  'div',
-                  { className: 'dsh-sb-memo-foot' },
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsh-sb-btn primary',
-                      disabled: saving || tooLong || !dirty,
-                      onClick: submit,
-                    },
-                    saving ? '保存中…' : '保存记忆',
-                  ),
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsh-sb-btn',
-                      disabled: !dirty,
-                      onClick: () => setDraft(group.memory ?? ''),
-                    },
-                    '撤销',
-                  ),
-                  h(
-                    'span',
-                    { className: 'dsh-sb-memo-tip' },
-                    tooLong ? '超过 4000 字符，存不进去' : '保存后下一轮请求生效',
-                  ),
-                  h('span', { className: 'dsh-sb-spacer' }),
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsh-sb-btn',
-                      onClick: () => {
-                        setConfirming(false)
-                        setRenaming(true)
-                      },
-                    },
-                    '重命名',
-                  ),
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsh-sb-btn danger',
-                      onClick: () => {
-                        // 两步：先问一次，再删。删组不删会话（红线）。
-                        if (confirming) void onDelete(group.id)
-                        else setConfirming(true)
-                      },
-                      onBlur: () => setConfirming(false),
-                    },
-                    confirming ? '确认删除？' : '删除工作组',
-                  ),
-                ),
-              ),
             )
           : null,
       )
@@ -1210,7 +1220,8 @@ window.__ModuleLoader__.load({
       const [cursor, setCursor] = React.useState(0)
       const [memory, setMemory] = React.useState({ revision: 0, groups: [], sessionsIndex: {} })
       const [memoryError, setMemoryError] = React.useState('')
-      const [expanded, setExpanded] = React.useState(() => new Set())
+      // 展开状态：**只记用户的显式覆盖**（id → 是否展开）。没覆盖过的组按状态自动展开。
+      const [overrides, setOverrides] = React.useState(() => new Map())
       const [creating, setCreating] = React.useState(false)
       const [newGroupName, setNewGroupName] = React.useState('')
 
@@ -1264,11 +1275,11 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const toggleGroup = (groupId) => {
-        setExpanded((previous) => {
-          const next = new Set(previous)
-          if (next.has(groupId)) next.delete(groupId)
-          else next.add(groupId)
+      /** 用户手动点了一次：把"当前实际状态取反"记成显式覆盖。 */
+      const toggleGroup = (groupId, currentlyExpanded) => {
+        setOverrides((previous) => {
+          const next = new Map(previous)
+          next.set(groupId, !currentlyExpanded)
           return next
         })
       }
@@ -1283,8 +1294,9 @@ window.__ModuleLoader__.load({
         })
       }
 
-      const saveGroupMemory = (groupId, text) =>
-        mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'PATCH', { memory: text }))
+      /** 用系统默认程序打开这个组的记忆 .md（host 侧 spawn）。 */
+      const openGroupFile = (groupId) =>
+        mutateMemory(() => memoryRequest(`/groups/${groupId}/open`, 'POST'))
       const renameGroup = (groupId, name) =>
         mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'PATCH', { name }))
       const removeGroup = (groupId) => mutateMemory(() => memoryRequest(`/groups/${groupId}`, 'DELETE'))
@@ -1338,7 +1350,20 @@ window.__ModuleLoader__.load({
             })
             .filter(Boolean)
             .sort((a, b) => (Number(b.row.updatedAt) || 0) - (Number(a.row.updatedAt) || 0))
-          return { group, members, bucket: groupBucketOf(members.map((member) => member.bucket)) }
+          const bucket = groupBucketOf(members.map((member) => member.bucket))
+          const latest = members.reduce(
+            (max, member) => Math.max(max, Number.isFinite(member.row.updatedAt) ? member.row.updatedAt : 0),
+            0,
+          )
+          return {
+            group,
+            members,
+            bucket,
+            latest,
+            expanded: overrides.has(group.id)
+              ? overrides.get(group.id)
+              : shouldAutoExpand(bucket, latest, now),
+          }
         })
 
         const visibleGroups = groups.filter((entry) => {
@@ -1377,7 +1402,7 @@ window.__ModuleLoader__.load({
         }
 
         return { groups: visibleGroups, ungrouped }
-      }, [buckets, memory, query])
+      }, [buckets, memory, query, overrides, now])
 
       const flatGroups = React.useMemo(
         () =>
@@ -1405,9 +1430,10 @@ window.__ModuleLoader__.load({
             event.preventDefault()
             setCursor((value) => Math.max(0, value - 1))
           } else if (event.key === 'Enter') {
-            if (flatGroups[cursor]) {
+            const active = view.groups.find((entry) => entry.group.id === flatGroups[cursor])
+            if (active) {
               event.preventDefault()
-              toggleGroup(flatGroups[cursor])
+              toggleGroup(active.group.id, active.expanded)
             }
           } else if (event.key === '/') {
             event.preventDefault()
@@ -1415,7 +1441,7 @@ window.__ModuleLoader__.load({
             if (input) input.focus()
           } else if (event.key === 'Escape') {
             setQuery('')
-            setExpanded(new Set())
+            setOverrides(new Map())
           }
         }
         window.addEventListener('keydown', onKeyDown)
@@ -1437,6 +1463,22 @@ window.__ModuleLoader__.load({
       for (const entry of view.groups) groupCounts[entry.bucket] = (groupCounts[entry.bucket] ?? 0) + 1
       const cursorId = flatGroups[cursor] ?? null
       const nothingMatched = view.groups.length === 0 && view.ungrouped.length === 0
+
+      // 「未分组」伪卡片的聚合状态与展开状态（与真实组同一套规则）。
+      const ungroupedMembers = view.ungrouped.map((entry) => ({
+        id: entry.id,
+        row: entry.row,
+        bucket: entry.bucket,
+      }))
+      const ungroupedBucket = groupBucketOf(ungroupedMembers.map((member) => member.bucket))
+      const ungroupedLatest = ungroupedMembers.reduce(
+        (max, member) => Math.max(max, Number(member.row.updatedAt) || 0),
+        0,
+      )
+      const ungroupedExpanded = overrides.has(UNGROUPED_ID)
+        ? overrides.get(UNGROUPED_ID)
+        : shouldAutoExpand(ungroupedBucket, ungroupedLatest, now)
+      const toggleUngrouped = () => toggleGroup(UNGROUPED_ID, ungroupedExpanded)
       // 立绘跟着看板状态换表情。
       // 注意素材真相（来自桌宠会话的实测）：idle/busy/alert 是 256×256 方形头像，
       // base/chew/hover 是 ~397×420 全身立绘；alert 还带一条 logo 横幅，放大了很怪，
@@ -1546,19 +1588,23 @@ window.__ModuleLoader__.load({
                             group: entry.group,
                             members: entry.members,
                             bucket: entry.bucket,
-                            expanded: expanded.has(entry.group.id),
+                            expanded: entry.expanded,
                             cursor: cursorId === entry.group.id,
                             now,
-                            onToggle: () => toggleGroup(entry.group.id),
+                            onToggle: () => toggleGroup(entry.group.id, entry.expanded),
                             onOpen: openSession,
-                            onSaveMemory: saveGroupMemory,
+                            onOpenFile: openGroupFile,
                             onRename: renameGroup,
                             onDelete: () => removeGroup(entry.group.id),
                             onRemoveMember: removeFromGroup,
                             onDropSession: (groupId, sessionId) => {
-                              // 拖进去之后自动展开：否则会话从「未分组」消失、
-                              // 组卡又默认收起，看起来就像丢了一样。
-                              setExpanded((previous) => new Set(previous).add(groupId))
+                              // 拖进去之后钉住"展开"，否则会话从「未分组」消失、
+                              // 组卡又收起，看起来就像丢了一样。
+                              setOverrides((previous) => {
+                                const next = new Map(previous)
+                                next.set(groupId, true)
+                                return next
+                              })
                               void addToGroup(groupId, sessionId)
                             },
                           }),
@@ -1602,20 +1648,16 @@ window.__ModuleLoader__.load({
                         'div',
                         { className: 'dsh-sb-col-body' },
                         h(GroupCard, {
-                          group: { id: UNGROUPED_ID, name: '未分组', memory: '' },
-                          members: view.ungrouped.map((entry) => ({
-                            id: entry.id,
-                            row: entry.row,
-                            bucket: entry.bucket,
-                          })),
-                          bucket: groupBucketOf(view.ungrouped.map((entry) => entry.bucket)),
-                          expanded: expanded.has(UNGROUPED_ID),
+                          group: { id: UNGROUPED_ID, name: '未分组', memory: '', memoryPath: '', memorySize: 0 },
+                          members: ungroupedMembers,
+                          bucket: ungroupedBucket,
+                          expanded: ungroupedExpanded,
                           cursor: cursorId === UNGROUPED_ID,
                           now,
                           pseudo: true,
-                          onToggle: () => toggleGroup(UNGROUPED_ID),
+                          onToggle: toggleUngrouped,
                           onOpen: openSession,
-                          onSaveMemory: null,
+                          onOpenFile: null,
                           onRename: null,
                           onDelete: null,
                           onRemoveMember: null,

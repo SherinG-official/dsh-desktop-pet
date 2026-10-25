@@ -86,9 +86,9 @@ test('model: 名字与记忆的上限是硬拒绝，不是静默截断', () => {
   assert.equal(validateGroupName('').ok, false)
   assert.equal(validateGroupName('x'.repeat(LIMITS.groupName + 1)).ok, false)
 
-  const memory = validateMemory('x'.repeat(LIMITS.groupMemory))
+  const memory = validateMemory('x'.repeat(LIMITS.memoryFile))
   assert.equal(memory.ok, true)
-  const tooLong = validateMemory('x'.repeat(LIMITS.groupMemory + 1))
+  const tooLong = validateMemory('x'.repeat(LIMITS.memoryFile + 1))
   assert.equal(tooLong.ok, false)
   assert.equal(tooLong.error.code, 'GROUP_MEMORY_TOO_LONG')
 })
@@ -180,14 +180,21 @@ test('store: 记忆超长被拒绝，且状态不变', async (t) => {
   const id = group.value.id
   const before = store.revision
 
-  const bad = await store.updateGroup(id, { memory: 'x'.repeat(LIMITS.groupMemory + 1) })
+  const bad = await store.updateGroup(id, { memory: 'x'.repeat(LIMITS.memoryFile + 1) })
   assert.equal(bad.ok, false)
   assert.equal(store.revision, before)
-  assert.equal(store.snapshot().groups[0].memory, '')
+  assert.equal(store.snapshot().groups[0].memorySize, 0)
 
   const good = await store.updateGroup(id, { memory: '约定 A' })
   assert.equal(good.ok, true)
-  assert.equal(store.snapshot().groups[0].memory, '约定 A')
+  assert.equal(store.snapshot().groups[0].memorySize, '约定 A'.length)
+  assert.equal(store.groupsOfSession(SID).length, 0)
+
+  // 记忆文件是独立 .md：写进去之后能读到，路径也随组返回。
+  await store.addSession(id, SID)
+  const groups = store.groupsOfSession(SID)
+  assert.equal(groups[0].memory, '约定 A')
+  assert.match(groups[0].memoryPath, /memory[\\/]grp_.*\.md$/)
 })
 
 test('store: 删组只删组与归属，不碰会话', async (t) => {
