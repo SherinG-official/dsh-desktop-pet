@@ -573,6 +573,10 @@ window.__ModuleLoader__.load({
       '.dsh-sb-settings-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
+      /* ---- 浮动入口（overlay 层，侧边栏折叠时也能回看板）---- */
+      '.dsh-sb-launcher{position:fixed;left:18px;bottom:18px;z-index:6;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:0 10px 28px -14px rgba(10,20,50,.5);transition:transform .15s ease,border-color .15s ease}',
+      '.dsh-sb-launcher:hover{border-color:var(--dsw-alias-brand-primary);transform:translateY(-1px)}',
+      '.dsh-sb-launcher:active{transform:translateY(0)}',
       /* ---- 工作组卡片 ---- */
       '.dsh-sb-group{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}',
       '.dsh-sb-group:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 6px 18px -10px rgba(20,40,90,.35)}',
@@ -722,6 +726,41 @@ window.__ModuleLoader__.load({
     const useNoSessions = (selector) => selector({ byId: EMPTY_BY_ID, items: [] })
     const useNoStatus = () => null
     const useAlwaysActive = () => true
+    /** 没有 usePanelInfo 时的兜底：当作"别的面板处于激活态"，浮动入口照常显示。 */
+    const useNoPanelInfo = (selector) => selector({})
+
+    /**
+     * 浮动入口按钮：常驻 `shell.overlay`。
+     *
+     * 为什么放这儿：侧边栏折叠后 `sidebar.panellist` 整个不可见，必须有一条不依赖
+     * 侧边栏的通路。overlay 容器是 `pointer-events:none`，但它的**直接子元素**是
+     * `auto`（AppFrame.css `.overlayLayer>*{pointer-events:auto}`），所以按钮真的点得到。
+     *
+     * 已经在看板时不渲染，避免挡住内容。
+     */
+    function BoardLauncher(props) {
+      const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
+      const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
+      if (active) return null
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-sb-launcher',
+          title: '回到会话进程',
+          onClick: () => {
+            try {
+              props?.ctx?.layout?.selectPanel?.(PANEL_ID)
+            } catch {
+              /* 忽略 */
+            }
+          },
+        },
+        h(WhaleTail, { size: 16 }),
+        h('span', null, '会话进程'),
+      )
+    }
+
     /** 没有 useWorkspaces 标准 prop 时的兜底：当成"没有任何归档"。 */
     const useNoWorkspaces = (selector) => selector({})
     /** 稳定的空数组：选择器每次都返回同一个引用，避免无谓重渲染。 */
@@ -1971,6 +2010,7 @@ window.__ModuleLoader__.load({
       const PanelEntry = (props) => React.createElement(Panel, { ...props, ctx })
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
+      const LauncherEntry = (props) => React.createElement(BoardLauncher, { ...props, ctx })
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
       slots.inject('sidebar.panellist', () =>
@@ -1982,8 +2022,8 @@ window.__ModuleLoader__.load({
         slots.register({ name: 'settings.section', id: 'skins', order: 26, label: '皮肤' }, SettingsEntry),
       )
 
-      // ① 启动直接落在看板；② 侧边栏折叠时用 Ctrl/⌘+Shift+B 也能跳回来。
-      // 侧边栏入口（sidebar.panellist）在折叠后不可见，所以必须有一条不依赖它的通路。
+      // ① 启动直接落在看板；② 侧边栏折叠时用 overlay 里的浮动按钮回来（见下）。
+      // 启动直接落在看板；侧边栏折叠时的可见入口是 shell.overlay 里的浮动按钮（见下）。
       ctx.inject(['layout'], (scoped) => {
         const layout = scoped.layout
         if (layout === undefined || typeof layout.selectPanel !== 'function') return
@@ -1999,25 +2039,15 @@ window.__ModuleLoader__.load({
             }
           }, 350)
         }
-
-        scoped.effect(
-          () => {
-            const onKeyDown = (event) => {
-              if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return
-              if (event.key !== 'B' && event.key !== 'b') return
-              event.preventDefault()
-              try {
-                layout.selectPanel(PANEL_ID)
-              } catch {
-                /* 忽略 */
-              }
-            }
-            window.addEventListener('keydown', onKeyDown)
-            return () => window.removeEventListener('keydown', onKeyDown)
-          },
-          'dsh-session-board: board shortcut',
-        )
       })
+
+      // 可见入口：浮动按钮常驻在 overlay 层。
+      // overlay 容器是 pointer-events:none，但**直接子元素**是 auto
+      // （AppFrame.css: `.overlayLayer{pointer-events:none}` /
+      //  `.overlayLayer>*{pointer-events:auto}`），所以按钮点得到。
+      slots.inject('shell.overlay', () =>
+        slots.register({ name: 'shell.overlay', id: 'session-board-launcher' }, LauncherEntry),
+      )
     }
 
     exports.apply = apply
