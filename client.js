@@ -818,6 +818,8 @@ window.__ModuleLoader__.load({
      * 现在优先用 `ctx.inject(['layout'])` 里拿到的那个实例（见 apply）。
      */
     let layoutService = null
+    /** B 方案：从看板点会话后的"切换窗口期"，窗口期内 tab 被宿主清掉就补回。 */
+    let switchWindowUntil = 0
     let composerTrapInstalled = false
 
     /**
@@ -1619,7 +1621,8 @@ window.__ModuleLoader__.load({
           }
         }
         if (boardWasOpen) {
-          setTimeout(() => openBoardPane(props.ctx), 400)
+          // 不靠定时器：打开一个 2 秒的窗口期，订阅到 tab 消失就立刻补回。
+          switchWindowUntil = Date.now() + 2000
         }
       }
 
@@ -2330,6 +2333,31 @@ window.__ModuleLoader__.load({
           return
         }
         scoped.effect(() => tabs.register(boardTabDefinition()), 'dsh-session-board: right tab type')
+        // B：切会话时宿主会清掉 tab，订阅到消失就立刻补回。
+        // 只在「刚在看板里点了会话」的 2 秒窗口期内生效，避免和用户主动关闭打架。
+        scoped.effect(() => {
+          let present = false
+          return tabs.subscribe(() => {
+            const open = typeof tabs.get === 'function' && tabs.get(TAB_KIND) !== undefined
+            if (open) {
+              present = true
+              return
+            }
+            if (!present) return
+            if (Date.now() > switchWindowUntil) {
+              present = false
+              return
+            }
+            const sidebar = ctx.get?.('sidebarRight') ?? ctx.sidebarRight
+            if (sidebar && typeof sidebar.openTab === 'function') {
+              try {
+                sidebar.openTab(TAB_KIND)
+              } catch {
+                /* 忽略 */
+              }
+            }
+          })
+        }, 'dsh-session-board: keep tab on session switch')
       })
       slots.inject('sidebar.right.pane.tab', () =>
         slots.register({ name: 'sidebar.right.pane.tab', key: TAB_ID }, PaneEntry),
