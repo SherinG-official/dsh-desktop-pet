@@ -578,6 +578,10 @@ window.__ModuleLoader__.load({
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
       '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
+      // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
+      '.dsh-sb-bottombar{display:none;align-items:center;gap:6px;margin:0 auto;padding:4px 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer}',
+      'body:has([data-sidebar-collapsed]) .dsh-sb-bottombar{display:inline-flex}',
+      '.dsh-sb-bottombar:hover{color:var(--dsw-alias-label-primary)}',
       '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -888,9 +892,23 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 会话框里的小入口：在表情按钮右边加一个图标（`conversation.input.right`，
-     * 「提交按钮之前的紧凑控件」座位）。这样不需要任何侧边栏额外入口。
+     * 兜底入口：`shell.bottom` 里的一条细条，只在侧边栏折叠时显示
+     * （用 CSS `:has([data-sidebar-collapsed])` 控制，不需要 JS 监听）。
+     * 它在布局流里，不覆盖任何控件；宿主保证这个座位常驻。
      */
+    function BottomBoardEntry(props) {
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-sb-bottombar',
+          title: '打开会话进程',
+          onClick: () => gotoBoard(props?.ctx),
+        },
+        h(WhaleTail, { size: 14 }),
+        h('span', null, '会话进程'),
+      )
+    }
     function ComposerBoardButton(props) {
       const open = (event) => {
         if (event !== undefined && typeof event.preventDefault === 'function') event.preventDefault()
@@ -2170,6 +2188,7 @@ window.__ModuleLoader__.load({
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
       const ComposerEntry = (props) => React.createElement(ComposerBoardButton, { ...props, ctx })
+      const BottomEntry = (props) => React.createElement(BottomBoardEntry, { ...props, ctx })
       const LauncherEntry = null
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
@@ -2200,6 +2219,8 @@ window.__ModuleLoader__.load({
       // 入口：会话框内、表情按钮右边（conversation.input.right 座位）。
       // 侧边栏列表里那个「会话进程」仍然保留，但不再放任何悬浮/标题栏按钮。
       installComposerTrap(ctx)
+      // 兜底入口：底部细条（仅折叠时显示，CSS 控制）。
+      slots.inject('shell.bottom', () => slots.register({ name: 'shell.bottom' }, BottomEntry))
       slots.inject('conversation.input.right', () =>
         slots.register({ name: 'conversation.input.right', id: 'session-board', order: 30, label: '会话进程' }, ComposerEntry),
       )
