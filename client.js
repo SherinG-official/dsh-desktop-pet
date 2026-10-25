@@ -577,6 +577,7 @@ window.__ModuleLoader__.load({
       // 放在窗口标题栏**右端**（窗口按钮左侧的空白区），完全避开左侧菜单；
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
       '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
+      '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -806,8 +807,24 @@ window.__ModuleLoader__.load({
       }
 
       const fail = () => {
+        // 不用 alert：Electron 渲染层可能把对话框禁掉，之前"毫无反应"就包含了这一层。
+        // 直接把原因画在页面顶部，8 秒后自己消失。
         try {
-          window.alert(`会话进程打不开：${lastError ?? '拿不到 layout 服务（layoutService 为空）'}`)
+          let node = document.getElementById('dsh-sb-error-toast')
+          if (node === null) {
+            node = document.createElement('div')
+            node.id = 'dsh-sb-error-toast'
+            document.body.appendChild(node)
+          }
+          node.className = 'dsh-sb-toast'
+          node.textContent = `会话进程打不开：${lastError ?? '拿不到 layout 服务（layoutService 为空）'}`
+          setTimeout(() => {
+            try {
+              node.remove()
+            } catch {
+              /* 忽略 */
+            }
+          }, 8000)
         } catch {
           /* 忽略 */
         }
