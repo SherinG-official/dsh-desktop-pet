@@ -767,34 +767,54 @@ window.__ModuleLoader__.load({
     function gotoBoard(ctx) {
       const candidates = [layoutService, ctx?.layout, ctx?.get?.('layout')]
       let lastError = null
+
+      /** 兜底：点宿主自己渲染的侧边栏入口（必须排除我们自己的按钮）。 */
+      const clickSidebarEntry = () => {
+        try {
+          const entries = document.querySelectorAll('[aria-label*="会话进程"]')
+          for (const entry of entries) {
+            if (entry.closest('[data-dsh-sb-own]') !== null) continue
+            if (typeof entry.click === 'function') {
+              entry.click()
+              return true
+            }
+          }
+        } catch {
+          /* 忽略 */
+        }
+        return false
+      }
+
+      const fail = () => {
+        try {
+          window.alert(`会话进程打不开：${lastError ?? '拿不到 layout 服务（layoutService 为空）'}`)
+        } catch {
+          /* 忽略 */
+        }
+        return false
+      }
+
       for (const layout of candidates) {
         if (layout && typeof layout.selectPanel === 'function') {
           try {
             layout.selectPanel(PANEL_ID)
-            return true
           } catch (error) {
             lastError = error?.message ?? String(error)
             console.warn('[dsh-session-board] selectPanel 失败：', lastError)
+            continue
           }
-        }
-      }
-      // 兜底 1：点侧边栏里宿主自己渲染的那个入口（它的选择路径一定可用）。
-      try {
-        const entry = document.querySelector('[aria-label="会话进程"], [aria-label*="会话进程"]')
-        if (entry !== null && typeof entry.click === 'function') {
-          entry.click()
+          // selectPanel 不抛 ≠ 真的切过去了：250ms 后看我们的面板根节点在不在。
+          setTimeout(() => {
+            if (document.querySelector('.dsh-sb') !== null) return
+            if (clickSidebarEntry()) return
+            lastError = 'selectPanel 调用成功，但看板没有渲染'
+            fail()
+          }, 250)
           return true
         }
-      } catch {
-        /* 忽略 */
       }
-      // 兜底 2：把失败原因直接抛给用户看，不再静默。
-      try {
-        window.alert(`会话进程打不开：${lastError ?? '拿不到 layout 服务'}`)
-      } catch {
-        /* 忽略 */
-      }
-      return false
+      if (clickSidebarEntry()) return true
+      return fail()
     }
 
     /** 侧边栏底部（Settings 旁边）的入口，侧边栏展开时用。 */
@@ -849,6 +869,7 @@ window.__ModuleLoader__.load({
           className: 'dsh-sb-launcher',
           title: '会话进程',
           'aria-label': '会话进程',
+          'data-dsh-sb-own': '1',
           onClick: () => gotoBoard(props?.ctx),
         },
         h(WhaleTail, { size: 14 }),
