@@ -839,6 +839,11 @@ window.__ModuleLoader__.load({
      * 「提交按钮之前的紧凑控件」座位）。这样不需要任何侧边栏额外入口。
      */
     function ComposerBoardButton(props) {
+      const open = (event) => {
+        if (event !== undefined && typeof event.preventDefault === 'function') event.preventDefault()
+        if (event !== undefined && typeof event.stopPropagation === 'function') event.stopPropagation()
+        gotoBoard(props?.ctx)
+      }
       return h(
         'button',
         {
@@ -846,7 +851,12 @@ window.__ModuleLoader__.load({
           className: 'dsh-sb-composerbtn',
           title: '打开会话进程',
           'aria-label': '打开会话进程',
-          onClick: () => gotoBoard(props?.ctx),
+          'data-dsh-sb-own': '1',
+          // composer 那层可能有拖拽/遮罩抢事件：click 之外再绑 pointerdown，
+          // 哪个先到算哪个（gotoBoard 幂等）。
+          onClick: open,
+          onPointerDown: open,
+          style: { pointerEvents: 'auto' },
         },
         h(WhaleTail, { size: 15 }),
       )
