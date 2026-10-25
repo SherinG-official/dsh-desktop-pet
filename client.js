@@ -581,6 +581,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
       '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
       '.dsh-sb-pane .dsh-sb-col{max-width:none;min-width:0;width:100%}',
+      // 未分组单独靠下：拉开距离 + 虚线分隔，和上面各状态分桶区分开
+      '.dsh-sb-pane .dsh-sb-col-ungrouped{margin-top:20px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:10px}',
       /* 紧凑密度：右栏 ~400px，所有间距/字号各缩一档，头部改为纵向堆叠 */
       '.dsh-sb-pane .dsh-sb{font-size:12px}',
       '.dsh-sb-pane .dsh-sb-head{flex-direction:column;align-items:stretch;gap:6px;padding:8px 10px}',
@@ -1921,7 +1923,8 @@ window.__ModuleLoader__.load({
                 h(
                   'div',
                   { className: 'dsh-sb-board' },
-                  GROUP_BUCKETS.filter((bucket) => (groupCounts[bucket.key] ?? 0) > 0).map((bucket) => {
+                  // 「进行中」常驻：即使 0 个也显示，布局不跳。
+                  GROUP_BUCKETS.filter((bucket) => (groupCounts[bucket.key] ?? 0) > 0 || bucket.key === 'working').map((bucket) => {
                     const entries = view.groups.filter((entry) => entry.bucket === bucket.key)
                     return h(
                       'div',
