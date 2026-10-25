@@ -580,11 +580,9 @@ window.__ModuleLoader__.load({
       // 右侧面板容器：占满可用高度、窄宽度下按单列排。
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
       '.dsh-sb-pane .dsh-sb-board{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px;overflow:visible}',
-      /* 列宽固定，不再拉伸/挤压（省掉宽度自适应）；高度交给容器滚动 */
-      '.dsh-sb-pane .dsh-sb-col{flex:0 0 210px;width:210px;min-width:0;max-width:none;display:flex;flex-direction:column;min-height:0}',
-      '.dsh-sb-pane .dsh-sb-col-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden}',
+      '.dsh-sb-pane .dsh-sb-col{flex:1 1 200px;min-width:180px;max-width:none;width:auto}',
       /* 未分组：换到下一行、占满整行，与上面的列左边缘对齐 */
-      '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:0 0 100%;width:100%;margin-top:6px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:6px}',
+      '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:1 1 100%;margin-top:6px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:6px}',
       /* 头部：标题居左，药丸 + 搜索挤到右侧同一行 */
       '.dsh-sb-pane .dsh-sb-head{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px}',
       '.dsh-sb-pane .dsh-sb-head .dsh-sb-title{flex:0 0 auto}',
