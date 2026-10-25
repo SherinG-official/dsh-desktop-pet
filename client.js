@@ -618,6 +618,10 @@ window.__ModuleLoader__.load({
       '.dsh-sb-pane .dsh-sb-board{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:8px;overflow:visible}',
       '.dsh-sb-pane .dsh-sb-col{flex:0 0 210px;width:210px;max-width:none;min-width:0}',
       '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:0 0 100%;width:100%;margin-top:20px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:10px}',
+      /* 定稿尺寸：列 240px（组名不再截断）、行距 10、未分组贴紧上一行 */
+      '.dsh-sb-pane .dsh-sb-board{align-content:flex-start;gap:10px}',
+      '.dsh-sb-pane .dsh-sb-col{flex:0 0 240px;width:240px}',
+      '.dsh-sb-pane .dsh-sb-col-ungrouped{margin-top:12px;padding-top:8px}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
       '.dsh-sb-bottombar{display:none;align-items:center;gap:6px;margin:0 auto;padding:4px 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer}',
