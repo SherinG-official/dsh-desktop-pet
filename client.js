@@ -775,9 +775,21 @@ window.__ModuleLoader__.load({
       if (composerTrapInstalled) return
       composerTrapInstalled = true
       const handle = (event) => {
-        const target = event.target
-        if (!(target instanceof Element)) return
-        if (target.closest('.dsh-sb-composerbtn') === null) return
+        // 宿主可能把 slot 渲染进 shadow DOM：跨过边界后 event.target 会被
+        // 重定向成宿主元素，closest 找不到我们的按钮 —— 必须用 composedPath。
+        let hit = false
+        try {
+          const path = typeof event.composedPath === 'function' ? event.composedPath() : []
+          hit = path.some(
+            (node) => node instanceof Element && node.classList !== undefined && node.classList.contains('dsh-sb-composerbtn'),
+          )
+        } catch {
+          hit = false
+        }
+        if (!hit) {
+          const target = event.target
+          if (!(target instanceof Element) || target.closest('.dsh-sb-composerbtn') === null) return
+        }
         event.preventDefault()
         event.stopPropagation()
         gotoBoard(ctx)
