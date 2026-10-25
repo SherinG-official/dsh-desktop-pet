@@ -2236,7 +2236,6 @@ window.__ModuleLoader__.load({
       }
 
       const SettingsEntry = () => React.createElement(SettingsPage)
-      const ComposerEntry = (props) => React.createElement(ComposerBoardButton, { ...props, ctx })
       const PaneEntry = (props) => React.createElement(RightPaneBoard, { ...props, ctx })
 
       // 只保留「设置 → 皮肤」一件事放在常规座位。
@@ -2247,11 +2246,6 @@ window.__ModuleLoader__.load({
       // 会话进程本体：右侧面板的一个 tab（不切主面板、不影响当前会话）。
       slots.inject('sidebar.right.pane.tab', () =>
         slots.register({ name: 'sidebar.right.pane.tab', key: PANEL_ID, label: '会话进程' }, PaneEntry),
-      )
-
-      // 唯一入口：输入框工具栏的鲸尾图标 → openTab。
-      slots.inject('conversation.input.left', () =>
-        slots.register({ name: 'conversation.input.left', id: 'session-board', order: 6, label: '会话进程' }, ComposerEntry),
       )
     }
 
