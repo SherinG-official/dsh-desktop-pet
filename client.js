@@ -27,6 +27,8 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const PANEL_ID = 'session-board'
+    /** 进程内只做一次"启动即进入看板"（热重载不重复抢焦点）。 */
+    let booted = false
     /** 桌宠立绘的来源（host 侧 lib/pet.js 把 dsh-desktop-pet 的 PNG 转出来）。 */
     const PET_ROUTE = '/api/session-board/pet/'
     /** 桌宠自己的控制路由：/dsh-desktop-pet?action=status|toggle。 */
@@ -288,21 +290,21 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 哪些工作组默认展开？
+     * 工作组默认**不展开**（用户要的是"别每次都多点一下"，不是把整组摊开）。
+     * 折叠时只把「刚刚有动静的会话」作为预览行露出来（见 GroupCard 的 peek）。
      *
-     * 用户的要求：**正在工作的、刚干完的，不要折叠** —— 否则每次都要多点一下。
-     *
-     * 注意"刚干完"不等于 `ended`：一条会话停下来后先落进 **idle**（24 小时内），
-     * 24 小时后才变 ended。所以这里不能只判 ended，必须按"最近活动"判 ——
-     * 否则 3 分钟前刚跑完的组仍然会收起（实测踩过）。
-     *
-     * 规则：waiting / working 一律展开；最近 15 分钟内有活动的一律展开。
-     * 用户自己点过的以显式覆盖为准（见 Panel 里的 overrides）。
+     * 为什么用时间而不是桶：一条会话停下来后先落进 idle（24 小时内），
+     * 24 小时后才变 ended —— 只判 ended 会让 3 分钟前刚跑完的组什么都看不到。
      */
-    const AUTO_EXPAND_FRESH_MS = 15 * 60 * 1000
-    function shouldAutoExpand(bucket, latest, now) {
-      if (bucket === 'waiting' || bucket === 'working') return true
-      return latest > 0 && now - latest <= AUTO_EXPAND_FRESH_MS
+    const FRESH_MS = 15 * 60 * 1000
+
+    /** 折叠卡片上要露出来的成员：正在跑 / 等你回答 / 最近 15 分钟内有活动。 */
+    function freshMembers(members, now) {
+      return members.filter((member) => {
+        if (member.bucket === 'waiting' || member.bucket === 'working') return true
+        const at = Number(member.row?.updatedAt)
+        return Number.isFinite(at) && now - at <= FRESH_MS
+      })
     }
 
     /** 伪工作组的 id：不属于任何组的会话，全部挂在这张「未分组」卡上（不可改名/删除/写记忆）。 */
@@ -599,6 +601,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-x{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:14px}',
       '.dsh-sb-x:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary)}',
       '.dsh-sb-member-empty{font-size:11px;color:var(--dsw-alias-label-secondary);padding:6px 2px}',
+      '.dsh-sb-peek{display:flex;flex-direction:column;gap:2px;border-top:1px dashed var(--dsw-alias-border-l1);padding-top:6px}',
+      '.dsh-sb-peek-more{align-self:flex-start;background:none;border:0;padding:2px 4px;font-size:10px;color:var(--dsw-alias-brand-primary);cursor:pointer}',
       '.dsh-sb-memo{display:flex;flex-direction:column;gap:6px;margin-top:6px}',
       '.dsh-sb-memo-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--dsw-alias-label-secondary)}',
       '.dsh-sb-memo-count{font-variant-numeric:tabular-nums}',
@@ -995,6 +999,8 @@ window.__ModuleLoader__.load({
         0,
       )
       const preview = group.memoryPreview ?? memoryPreview(group.memory)
+      // 折叠时露出的"刚刚有动静"的会话（不是把整组摊开）。
+      const fresh = freshMembers(members, now)
 
       /** 确认改名：空名字或没改就只关输入框，不发请求。 */
       const commitRename = () => {
@@ -1091,6 +1097,33 @@ window.__ModuleLoader__.load({
           latest > 0 ? h('span', { className: 'dsh-sb-when' }, formatAgo(latest, now)) : null,
         ),
         preview !== '' ? h('div', { className: 'dsh-sb-group-memo' }, preview) : null,
+        // 折叠状态下的"预览行"：只露出刚跑完 / 正在跑的会话，不摊开整组、
+        // 也不显示记忆文件。这样既不用点开，也不会把卡片撑得很大。
+        !expanded && fresh.length > 0
+          ? h(
+              'div',
+              { className: 'dsh-sb-peek' },
+              fresh.slice(0, 3).map((member) =>
+                h(MemberRow, {
+                  key: `peek-${member.id}`,
+                  id: member.id,
+                  groupId: pseudo ? '' : group.id,
+                  row: member.row,
+                  bucket: member.bucket,
+                  now,
+                  onOpen: () => onOpen(member.id),
+                  onRemove: null,
+                }),
+              ),
+              members.length > fresh.length
+                ? h(
+                    'button',
+                    { type: 'button', className: 'dsh-sb-peek-more', onClick: onToggle },
+                    `还有 ${members.length - fresh.length} 个 · 展开`,
+                  )
+                : null,
+            )
+          : null,
         expanded
           ? h(
               'div',
@@ -1365,9 +1398,7 @@ window.__ModuleLoader__.load({
             members,
             bucket,
             latest,
-            expanded: overrides.has(group.id)
-              ? overrides.get(group.id)
-              : shouldAutoExpand(bucket, latest, now),
+            expanded: overrides.get(group.id) === true,
           }
         })
 
@@ -1480,9 +1511,7 @@ window.__ModuleLoader__.load({
         (max, member) => Math.max(max, Number(member.row.updatedAt) || 0),
         0,
       )
-      const ungroupedExpanded = overrides.has(UNGROUPED_ID)
-        ? overrides.get(UNGROUPED_ID)
-        : shouldAutoExpand(ungroupedBucket, ungroupedLatest, now)
+      const ungroupedExpanded = overrides.get(UNGROUPED_ID) === true
       const toggleUngrouped = () => toggleGroup(UNGROUPED_ID, ungroupedExpanded)
       // 立绘跟着看板状态换表情。
       // 注意素材真相（来自桌宠会话的实测）：idle/busy/alert 是 256×256 方形头像，
@@ -1952,6 +1981,43 @@ window.__ModuleLoader__.load({
       slots.inject('settings.section', () =>
         slots.register({ name: 'settings.section', id: 'skins', order: 26, label: '皮肤' }, SettingsEntry),
       )
+
+      // ① 启动直接落在看板；② 侧边栏折叠时用 Ctrl/⌘+Shift+B 也能跳回来。
+      // 侧边栏入口（sidebar.panellist）在折叠后不可见，所以必须有一条不依赖它的通路。
+      ctx.inject(['layout'], (scoped) => {
+        const layout = scoped.layout
+        if (layout === undefined || typeof layout.selectPanel !== 'function') return
+
+        if (!booted) {
+          booted = true
+          // 让宿主的初始面板先挂载完，再切过来，否则会被它的默认选择覆盖。
+          setTimeout(() => {
+            try {
+              layout.selectPanel(PANEL_ID)
+            } catch {
+              /* 忽略 */
+            }
+          }, 350)
+        }
+
+        scoped.effect(
+          () => {
+            const onKeyDown = (event) => {
+              if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return
+              if (event.key !== 'B' && event.key !== 'b') return
+              event.preventDefault()
+              try {
+                layout.selectPanel(PANEL_ID)
+              } catch {
+                /* 忽略 */
+              }
+            }
+            window.addEventListener('keydown', onKeyDown)
+            return () => window.removeEventListener('keydown', onKeyDown)
+          },
+          'dsh-session-board: board shortcut',
+        )
+      })
     }
 
     exports.apply = apply
