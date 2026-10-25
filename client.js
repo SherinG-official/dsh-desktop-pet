@@ -574,7 +574,7 @@ window.__ModuleLoader__.load({
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
       /* ---- 入口按钮（只在侧边栏隐藏时出现，位置对齐左上角「新建会话 ⊕」）---- */
-      '.dsh-sb-launcher{position:fixed;left:84px;top:9px;z-index:7;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}',
+      '.dsh-sb-launcher{position:fixed;z-index:7;display:inline-flex;align-items:center;justify-content:center;padding:0;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}',
       '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -826,6 +826,7 @@ window.__ModuleLoader__.load({
           return false
         }
       })
+      const [pos, setPos] = React.useState({ left: 76, top: 10, size: 20 })
 
       React.useEffect(() => {
         const observer = new MutationObserver(() => {
@@ -839,6 +840,36 @@ window.__ModuleLoader__.load({
         return () => observer.disconnect()
       }, [])
 
+      // 贴着「新建会话 ⊕」的右边缘放，间距 4px —— 固定坐标会压到「应用」菜单。
+      React.useEffect(() => {
+        if (!collapsed) return undefined
+        const measure = () => {
+          try {
+            const plus = document.querySelector(
+              '[aria-label*="新会话"], [aria-label*="新建会话"], [title*="新会话"], [title*="新建会话"]',
+            )
+            if (plus === null) return
+            const rect = plus.getBoundingClientRect()
+            if (rect.width === 0) return
+            const size = Math.max(18, Math.round(rect.height))
+            setPos({
+              left: Math.round(rect.right + 4),
+              top: Math.round(rect.top + (rect.height - size) / 2),
+              size,
+            })
+          } catch {
+            /* 忽略 */
+          }
+        }
+        measure()
+        const timer = setInterval(measure, 1500)
+        window.addEventListener('resize', measure)
+        return () => {
+          clearInterval(timer)
+          window.removeEventListener('resize', measure)
+        }
+      }, [collapsed])
+
       if (active || !collapsed) return null
       return h(
         'button',
@@ -847,9 +878,10 @@ window.__ModuleLoader__.load({
           className: 'dsh-sb-launcher',
           title: '会话进程',
           'aria-label': '会话进程',
+          style: { left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.size}px`, height: `${pos.size}px` },
           onClick: () => gotoBoard(props?.ctx),
         },
-        h(WhaleTail, { size: 15 }),
+        h(WhaleTail, { size: 14 }),
       )
     }
 
