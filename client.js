@@ -774,7 +774,7 @@ window.__ModuleLoader__.load({
     function installComposerTrap(ctx) {
       if (composerTrapInstalled) return
       composerTrapInstalled = true
-      const onPointerDown = (event) => {
+      const handle = (event) => {
         const target = event.target
         if (!(target instanceof Element)) return
         if (target.closest('.dsh-sb-composerbtn') === null) return
@@ -782,7 +782,11 @@ window.__ModuleLoader__.load({
         event.stopPropagation()
         gotoBoard(ctx)
       }
-      document.addEventListener('pointerdown', onPointerDown, true)
+      // 挂在 window 的 capture 阶段：宿主若在 document 上 capture 就吞事件，
+      // window 这一层比它更早；三种事件都试，哪个先到算哪个。
+      for (const type of ['pointerdown', 'mousedown', 'click']) {
+        window.addEventListener(type, handle, true)
+      }
     }
 
     function gotoBoard(ctx) {
