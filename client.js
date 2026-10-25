@@ -576,7 +576,7 @@ window.__ModuleLoader__.load({
       /* ---- 入口按钮（只在侧边栏隐藏时出现，位置对齐左上角「新建会话 ⊕」）---- */
       // 放在窗口标题栏**右端**（窗口按钮左侧的空白区），完全避开左侧菜单；
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
-      '.dsh-sb-launcher{position:fixed;right:150px;top:8px;z-index:7;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;-webkit-app-region:no-drag}',
+      '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
       '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -835,44 +835,20 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 侧边栏隐藏时，在窗口左上角「新建会话 ⊕」旁边多出来的一个图标。
-     * 侧边栏展开时不渲染（列表里已经有「会话进程」了）。
+     * 会话框里的小入口：在表情按钮右边加一个图标（`conversation.input.right`，
+     * 「提交按钮之前的紧凑控件」座位）。这样不需要任何侧边栏额外入口。
      */
-    function CollapsedBoardIcon(props) {
-      const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
-      const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
-      const [collapsed, setCollapsed] = React.useState(() => {
-        try {
-          return document.querySelector('[data-sidebar-collapsed]') !== null
-        } catch {
-          return false
-        }
-      })
-
-      React.useEffect(() => {
-        const observer = new MutationObserver(() => {
-          try {
-            setCollapsed(document.querySelector('[data-sidebar-collapsed]') !== null)
-          } catch {
-            /* 忽略 */
-          }
-        })
-        observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-sidebar-collapsed'] })
-        return () => observer.disconnect()
-      }, [])
-
-      if (active || !collapsed) return null
+    function ComposerBoardButton(props) {
       return h(
         'button',
         {
           type: 'button',
-          className: 'dsh-sb-launcher',
-          title: '会话进程',
-          'aria-label': '会话进程',
-          'data-dsh-sb-own': '1',
+          className: 'dsh-sb-composerbtn',
+          title: '打开会话进程',
+          'aria-label': '打开会话进程',
           onClick: () => gotoBoard(props?.ctx),
         },
-        h(WhaleTail, { size: 14 }),
+        h(WhaleTail, { size: 15 }),
       )
     }
 
@@ -2130,7 +2106,8 @@ window.__ModuleLoader__.load({
       const PanelEntry = (props) => React.createElement(Panel, { ...props, ctx })
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
-      const LauncherEntry = (props) => React.createElement(CollapsedBoardIcon, { ...props, ctx })
+      const ComposerEntry = (props) => React.createElement(ComposerBoardButton, { ...props, ctx })
+      const LauncherEntry = null
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
       slots.inject('sidebar.panellist', () =>
@@ -2157,10 +2134,10 @@ window.__ModuleLoader__.load({
         setTimeout(dismissFirstPaint, 4000)
       })
 
-      // 入口：侧边栏展开时用宿主自带的「会话进程」列表项；
-      // 折叠时在左上角「新建会话 ⊕」旁边多一个图标（overlay 层）。
-      slots.inject('shell.overlay', () =>
-        slots.register({ name: 'shell.overlay', id: 'session-board-launcher' }, LauncherEntry),
+      // 入口：会话框内、表情按钮右边（conversation.input.right 座位）。
+      // 侧边栏列表里那个「会话进程」仍然保留，但不再放任何悬浮/标题栏按钮。
+      slots.inject('conversation.input.right', () =>
+        slots.register({ name: 'conversation.input.right', id: 'session-board', order: 30, label: '会话进程' }, ComposerEntry),
       )
     }
 
