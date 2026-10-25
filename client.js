@@ -763,6 +763,26 @@ window.__ModuleLoader__.load({
      * 现在优先用 `ctx.inject(['layout'])` 里拿到的那个实例（见 apply）。
      */
     let layoutService = null
+    let composerTrapInstalled = false
+
+    /**
+     * composer 里有宿主自己的 capture 阶段处理器（聚焦/拖拽），会把 pointerdown
+     * 在到达 React 之前吞掉 —— 表现就是"有 hover/tooltip，但 onClick 不触发"。
+     * 所以这里在 **document 的 capture 阶段**自己抓一次最原始的指针事件。
+     */
+    function installComposerTrap(ctx) {
+      if (composerTrapInstalled) return
+      composerTrapInstalled = true
+      const onPointerDown = (event) => {
+        const target = event.target
+        if (!(target instanceof Element)) return
+        if (target.closest('.dsh-sb-composerbtn') === null) return
+        event.preventDefault()
+        event.stopPropagation()
+        gotoBoard(ctx)
+      }
+      document.addEventListener('pointerdown', onPointerDown, true)
+    }
 
     function gotoBoard(ctx) {
       const candidates = [layoutService, ctx?.layout, ctx?.get?.('layout')]
@@ -2146,6 +2166,7 @@ window.__ModuleLoader__.load({
 
       // 入口：会话框内、表情按钮右边（conversation.input.right 座位）。
       // 侧边栏列表里那个「会话进程」仍然保留，但不再放任何悬浮/标题栏按钮。
+      installComposerTrap(ctx)
       slots.inject('conversation.input.right', () =>
         slots.register({ name: 'conversation.input.right', id: 'session-board', order: 30, label: '会话进程' }, ComposerEntry),
       )
