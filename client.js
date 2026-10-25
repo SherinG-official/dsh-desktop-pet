@@ -577,6 +577,10 @@ window.__ModuleLoader__.load({
       // 放在窗口标题栏**右端**（窗口按钮左侧的空白区），完全避开左侧菜单；
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
       '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
+      // 右侧面板容器：占满可用高度、窄宽度下按单列排。
+      '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
+      '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
+      '.dsh-sb-pane .dsh-sb-col{max-width:none;min-width:0;width:100%}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
       '.dsh-sb-bottombar{display:none;align-items:center;gap:6px;margin:0 auto;padding:4px 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer}',
@@ -924,11 +928,43 @@ window.__ModuleLoader__.load({
         h('span', null, '会话进程'),
       )
     }
+    /** 打开右侧面板的「会话进程」tab（不切主面板、不影响当前会话）。 */
+    function openBoardPane(ctx) {
+      const sidebar = ctx?.get?.('sidebarRight') ?? ctx?.sidebarRight
+      if (sidebar !== undefined && sidebar !== null && typeof sidebar.openTab === 'function') {
+        try {
+          sidebar.openTab(PANEL_ID)
+          return true
+        } catch (error) {
+          console.warn('[dsh-session-board] openTab 失败：', error?.message ?? error)
+        }
+      }
+      try {
+        let node = document.getElementById('dsh-sb-error-toast')
+        if (node === null) {
+          node = document.createElement('div')
+          node.id = 'dsh-sb-error-toast'
+          document.body.appendChild(node)
+        }
+        node.className = 'dsh-sb-toast'
+        node.textContent = '会话进程打不开：拿不到 sidebarRight 服务或 openTab'
+        setTimeout(() => node.remove(), 6000)
+      } catch {
+        /* 忽略 */
+      }
+      return false
+    }
+
+    /** 右侧面板里的看板容器。 */
+    function RightPaneBoard(props) {
+      return h('div', { className: 'dsh-sb-pane' }, h(Panel, { ...props }))
+    }
+
     function ComposerBoardButton(props) {
       const open = (event) => {
         if (event !== undefined && typeof event.preventDefault === 'function') event.preventDefault()
         if (event !== undefined && typeof event.stopPropagation === 'function') event.stopPropagation()
-        gotoBoard(props?.ctx)
+        openBoardPane(props?.ctx)
       }
       return h(
         'button',
@@ -2199,43 +2235,21 @@ window.__ModuleLoader__.load({
         return
       }
 
-      const PanelEntry = (props) => React.createElement(Panel, { ...props, ctx })
-      const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
       const ComposerEntry = (props) => React.createElement(ComposerBoardButton, { ...props, ctx })
-      const BottomEntry = (props) => React.createElement(BottomBoardEntry, { ...props, ctx })
-      const LauncherEntry = null
+      const PaneEntry = (props) => React.createElement(RightPaneBoard, { ...props, ctx })
 
-      slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
-      slots.inject('sidebar.panellist', () =>
-        slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 40, label: '会话进程' }, IconEntry),
-      )
-      // 皮肤管理器放在「设置 → 皮肤」，不再挤在看板头部。
-      // order 取 26：设置导航列高度固定、末尾条目会被裁掉（回收站用 25 才可见），26 紧跟其后。
+      // 只保留「设置 → 皮肤」一件事放在常规座位。
       slots.inject('settings.section', () =>
         slots.register({ name: 'settings.section', id: 'skins', order: 26, label: '皮肤' }, SettingsEntry),
       )
 
-      // 启动直接落在看板：100/400/900ms 各试一次 —— 首屏遮罩盖着，用户看不到
-      // 中间这几帧；宿主若在初始化后自己选了面板，后两次会把它纠回来。
-      ctx.inject(['layout'], (scoped) => {
-        if (scoped.layout === undefined || typeof scoped.layout.selectPanel !== 'function') return
-        // 保存下来给按钮用：客户端 ctx 只有声明了 inject 的服务才有属性。
-        layoutService = scoped.layout
-        if (booted) return
-        booted = true
-        for (const delay of [100, 400, 900]) {
-          setTimeout(() => gotoBoard(), delay)
-        }
-        // 兜底：4 秒后无论有没有切成功，都撤掉首屏遮罩，绝不盖死界面。
-        setTimeout(dismissFirstPaint, 4000)
-      })
+      // 会话进程本体：右侧面板的一个 tab（不切主面板、不影响当前会话）。
+      slots.inject('sidebar.right.pane.tab', () =>
+        slots.register({ name: 'sidebar.right.pane.tab', key: PANEL_ID, label: '会话进程' }, PaneEntry),
+      )
 
-      // 入口：会话框内、表情按钮右边（conversation.input.right 座位）。
-      // 侧边栏列表里那个「会话进程」仍然保留，但不再放任何悬浮/标题栏按钮。
-      installComposerTrap(ctx)
-      // 兜底入口：底部细条（仅折叠时显示，CSS 控制）。
-      slots.inject('shell.bottom', () => slots.register({ name: 'shell.bottom' }, BottomEntry))
+      // 唯一入口：输入框工具栏的鲸尾图标 → openTab。
       slots.inject('conversation.input.left', () =>
         slots.register({ name: 'conversation.input.left', id: 'session-board', order: 6, label: '会话进程' }, ComposerEntry),
       )
