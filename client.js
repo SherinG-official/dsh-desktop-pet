@@ -573,10 +573,9 @@ window.__ModuleLoader__.load({
       '.dsh-sb-settings-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
-      /* ---- 入口按钮 ---- */
-      // 会话标题栏右侧（「结构」旁边）：图标 + 文字，和「新建会话」同一类控件。
-      '.dsh-sb-headerbtn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1;cursor:pointer;white-space:nowrap}',
-      '.dsh-sb-headerbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}',
+      /* ---- 入口按钮（只在侧边栏隐藏时出现，位置对齐左上角「新建会话 ⊕」）---- */
+      '.dsh-sb-launcher{position:fixed;left:84px;top:9px;z-index:7;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}',
+      '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
       '.dsh-sb-action:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
@@ -765,23 +764,31 @@ window.__ModuleLoader__.load({
 
     function gotoBoard(ctx) {
       const candidates = [layoutService, ctx?.layout, ctx?.get?.('layout')]
+      let lastError = null
       for (const layout of candidates) {
         if (layout && typeof layout.selectPanel === 'function') {
           try {
             layout.selectPanel(PANEL_ID)
             return true
           } catch (error) {
-            console.warn('[dsh-session-board] selectPanel 失败：', error?.message ?? error)
+            lastError = error?.message ?? String(error)
+            console.warn('[dsh-session-board] selectPanel 失败：', lastError)
           }
         }
       }
-      // 最后的兜底：点一下侧边栏里我们自己那个入口（宿主自己的选择路径一定可用）。
+      // 兜底 1：点侧边栏里宿主自己渲染的那个入口（它的选择路径一定可用）。
       try {
-        const entry = document.querySelector('[aria-label="会话进程"], [data-panel-id="session-board"]')
+        const entry = document.querySelector('[aria-label="会话进程"], [aria-label*="会话进程"]')
         if (entry !== null && typeof entry.click === 'function') {
           entry.click()
           return true
         }
+      } catch {
+        /* 忽略 */
+      }
+      // 兜底 2：把失败原因直接抛给用户看，不再静默。
+      try {
+        window.alert(`会话进程打不开：${lastError ?? '拿不到 layout 服务'}`)
       } catch {
         /* 忽略 */
       }
@@ -806,26 +813,43 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 会话标题栏右侧的工具按钮（「结构」旁边那个位置）。
-     *
-     * 用户的意思是：别用悬浮胶囊（会压住标题栏图标），做成和「新建会话」一样的
-     * **常驻图标按钮**。这个座位在侧边栏折叠时依然可见，所以它同时承担折叠态的入口。
+     * 侧边栏隐藏时，在窗口左上角「新建会话 ⊕」旁边多出来的一个图标。
+     * 侧边栏展开时不渲染（列表里已经有「会话进程」了）。
      */
-    function HeaderBoardButton(props) {
+    function CollapsedBoardIcon(props) {
       const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
       const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
-      if (active) return null
+      const [collapsed, setCollapsed] = React.useState(() => {
+        try {
+          return document.querySelector('[data-sidebar-collapsed]') !== null
+        } catch {
+          return false
+        }
+      })
+
+      React.useEffect(() => {
+        const observer = new MutationObserver(() => {
+          try {
+            setCollapsed(document.querySelector('[data-sidebar-collapsed]') !== null)
+          } catch {
+            /* 忽略 */
+          }
+        })
+        observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-sidebar-collapsed'] })
+        return () => observer.disconnect()
+      }, [])
+
+      if (active || !collapsed) return null
       return h(
         'button',
         {
           type: 'button',
-          className: 'dsh-sb-headerbtn',
+          className: 'dsh-sb-launcher',
           title: '会话进程',
           'aria-label': '会话进程',
           onClick: () => gotoBoard(props?.ctx),
         },
-        h(WhaleTail, { size: 16 }),
-        h('span', { className: 'dsh-sb-headerbtn-text' }, '会话进程'),
+        h(WhaleTail, { size: 15 }),
       )
     }
 
@@ -2083,8 +2107,7 @@ window.__ModuleLoader__.load({
       const PanelEntry = (props) => React.createElement(Panel, { ...props, ctx })
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
-      const HeaderEntry = (props) => React.createElement(HeaderBoardButton, { ...props, ctx })
-      const SidebarActionEntry = (props) => React.createElement(SidebarBoardAction, { ...props, ctx })
+      const LauncherEntry = (props) => React.createElement(CollapsedBoardIcon, { ...props, ctx })
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
       slots.inject('sidebar.panellist', () =>
@@ -2111,15 +2134,10 @@ window.__ModuleLoader__.load({
         setTimeout(dismissFirstPaint, 4000)
       })
 
-      // 入口：侧边栏底部（展开时）+ 会话标题栏右侧（折叠时也在，和「结构」同一排）。
-      slots.inject('sidebar.footer.action', () =>
-        slots.register({ name: 'sidebar.footer.action', id: 'session-board', order: 10 }, SidebarActionEntry),
-      )
-      slots.inject('conversation.session.header.utilities', () =>
-        slots.register(
-          { name: 'conversation.session.header.utilities', id: 'session-board', order: 20, label: '会话进程' },
-          HeaderEntry,
-        ),
+      // 入口：侧边栏展开时用宿主自带的「会话进程」列表项；
+      // 折叠时在左上角「新建会话 ⊕」旁边多一个图标（overlay 层）。
+      slots.inject('shell.overlay', () =>
+        slots.register({ name: 'shell.overlay', id: 'session-board-launcher' }, LauncherEntry),
       )
     }
 
