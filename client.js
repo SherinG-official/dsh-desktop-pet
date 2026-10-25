@@ -612,6 +612,10 @@ window.__ModuleLoader__.load({
       // 放在窗口标题栏**右端**（窗口按钮左侧的空白区），完全避开左侧菜单；
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
       '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
+      // 头部图标：和「结构」同一排，用透明的图标按钮，不要浏览器默认的灰底
+      '.dsh-sb-headbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;line-height:1;cursor:pointer;-webkit-appearance:none;appearance:none}',
+      '.dsh-sb-headbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
+      '.dsh-sb-headbtn:active{transform:translateY(.5px)}',
       // 右侧面板容器：占满可用高度、窄宽度下按单列排。
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
       '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
