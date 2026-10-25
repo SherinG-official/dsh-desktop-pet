@@ -2221,8 +2221,8 @@ window.__ModuleLoader__.load({
       installComposerTrap(ctx)
       // 兜底入口：底部细条（仅折叠时显示，CSS 控制）。
       slots.inject('shell.bottom', () => slots.register({ name: 'shell.bottom' }, BottomEntry))
-      slots.inject('conversation.input.right', () =>
-        slots.register({ name: 'conversation.input.right', id: 'session-board', order: 30, label: '会话进程' }, ComposerEntry),
+      slots.inject('conversation.input.left', () =>
+        slots.register({ name: 'conversation.input.left', id: 'session-board', order: 6, label: '会话进程' }, ComposerEntry),
       )
     }
 
