@@ -1601,6 +1601,9 @@ window.__ModuleLoader__.load({
       const [newGroupName, setNewGroupName] = React.useState('')
 
       const openSession = (sessionId) => {
+        // 右侧面板是会话作用域的：切换会话会把我们的 tab 一起收掉。
+        // 记录点之前它是不是开着，切完再把它拉回来（用户本来关着的就不动）。
+        const boardWasOpen = document.querySelector('.dsh-sb-pane') !== null
         // 先切回会话面板，再选中那个会话：两条路都试，缺哪个都不至于点了没反应。
         try {
           props.ctx?.layout?.selectPanel?.('conversation')
@@ -1614,6 +1617,9 @@ window.__ModuleLoader__.load({
           } catch {
             /* 忽略 */
           }
+        }
+        if (boardWasOpen) {
+          setTimeout(() => openBoardPane(props.ctx), 400)
         }
       }
 
