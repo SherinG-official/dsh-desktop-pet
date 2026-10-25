@@ -622,6 +622,11 @@ window.__ModuleLoader__.load({
       '.dsh-sb-pane .dsh-sb-board{align-content:flex-start;gap:10px}',
       '.dsh-sb-pane .dsh-sb-col{flex:0 0 240px;width:240px}',
       '.dsh-sb-pane .dsh-sb-col-ungrouped{margin-top:12px;padding-top:8px}',
+      /* 根因：板子是 flex:1 的兄弟节点，会吃掉整列剩余高度，把未分组挤到最底部。
+         这里把板子改成不伸展，未分组紧跟其后；三种状态均分宽度、左右填满。 */
+      '.dsh-sb-pane .dsh-sb-board{flex:0 0 auto;align-content:flex-start}',
+      '.dsh-sb-pane .dsh-sb-col{flex:1 1 0;min-width:200px;width:auto}',
+      '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:1 1 100%;width:100%;margin-top:12px}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
       '.dsh-sb-bottombar{display:none;align-items:center;gap:6px;margin:0 auto;padding:4px 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer}',
