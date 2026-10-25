@@ -577,6 +577,10 @@ window.__ModuleLoader__.load({
       '.dsh-sb-launcher{position:fixed;left:18px;bottom:18px;z-index:6;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:0 10px 28px -14px rgba(10,20,50,.5);transition:transform .15s ease,border-color .15s ease}',
       '.dsh-sb-launcher:hover{border-color:var(--dsw-alias-brand-primary);transform:translateY(-1px)}',
       '.dsh-sb-launcher:active{transform:translateY(0)}',
+      /* ---- 启动遮罩：盖住"先会话页后看板"的跳转 ---- */
+      '.dsh-sb-boot{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-secondary);transition:opacity .22s ease;will-change:opacity}',
+      '.dsh-sb-boot.is-out{opacity:0;pointer-events:none}',
+      '.dsh-sb-boot-text{font-size:12px;letter-spacing:.08em}',
       /* ---- 工作组卡片 ---- */
       '.dsh-sb-group{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}',
       '.dsh-sb-group:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 6px 18px -10px rgba(20,40,90,.35)}',
@@ -728,6 +732,41 @@ window.__ModuleLoader__.load({
     const useAlwaysActive = () => true
     /** 没有 usePanelInfo 时的兜底：当作"别的面板处于激活态"，浮动入口照常显示。 */
     const useNoPanelInfo = (selector) => selector({})
+
+    /**
+     * 启动遮罩：把"打开时先闪一下会话页、再跳到看板"这段盖住。
+     *
+     * 为什么需要：宿主的初始面板选择发生在插件 apply 之后，我们只能晚一步
+     * 调 `selectPanel` —— 中间那一下人眼能明显看到跳转。与其装一个社区开机动画插件，
+     * 不如自己盖一层与背景同色的薄遮罩：切到看板后 220ms 淡出，最多盖 1.2s。
+     */
+    function BootCover(props) {
+      const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
+      const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
+      const [done, setDone] = React.useState(false)
+      const [fading, setFading] = React.useState(false)
+
+      React.useEffect(() => {
+        if (!active) return undefined
+        setFading(true)
+        const timer = setTimeout(() => setDone(true), 240)
+        return () => clearTimeout(timer)
+      }, [active])
+
+      // 兜底：无论是否切成功，1.2 秒后都撤掉，绝不把界面盖死。
+      React.useEffect(() => {
+        const timer = setTimeout(() => setDone(true), 1200)
+        return () => clearTimeout(timer)
+      }, [])
+
+      if (done) return null
+      return h(
+        'div',
+        { className: `dsh-sb-boot${fading ? ' is-out' : ''}`, 'aria-hidden': 'true' },
+        h(WhaleTail, { size: 36 }),
+        h('div', { className: 'dsh-sb-boot-text' }, '会话进程'),
+      )
+    }
 
     /**
      * 浮动入口按钮：常驻 `shell.overlay`。
@@ -2011,6 +2050,7 @@ window.__ModuleLoader__.load({
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
       const LauncherEntry = (props) => React.createElement(BoardLauncher, { ...props, ctx })
+      const BootCoverEntry = (props) => React.createElement(BootCover, { ...props, ctx })
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
       slots.inject('sidebar.panellist', () =>
@@ -2030,21 +2070,20 @@ window.__ModuleLoader__.load({
 
         if (!booted) {
           booted = true
-          // 让宿主的初始面板先挂载完，再切过来，否则会被它的默认选择覆盖。
+          // 尽早切（100ms）：遮罩负责盖住这中间的一帧；宿主若再覆盖，遮罩会随
+          // 激活状态变化淡出，不会留下"跳一下"的观感。
           setTimeout(() => {
             try {
               layout.selectPanel(PANEL_ID)
             } catch {
               /* 忽略 */
             }
-          }, 350)
+          }, 100)
         }
       })
 
-      // 可见入口：浮动按钮常驻在 overlay 层。
-      // overlay 容器是 pointer-events:none，但**直接子元素**是 auto
-      // （AppFrame.css: `.overlayLayer{pointer-events:none}` /
-      //  `.overlayLayer>*{pointer-events:auto}`），所以按钮点得到。
+      // 可见入口 + 启动遮罩：两个 overlay 条目（overlay 是 list slot）。
+      slots.inject('shell.overlay', () => slots.register({ name: 'shell.overlay', id: 'session-board-boot' }, BootCoverEntry))
       slots.inject('shell.overlay', () =>
         slots.register({ name: 'shell.overlay', id: 'session-board-launcher' }, LauncherEntry),
       )
