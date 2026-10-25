@@ -574,8 +574,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
       /* ---- 入口按钮 ---- */
-      // 折叠时：底部居中，不压侧边栏底部（那里有设置等按钮）。
-      '.dsh-sb-launcher{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:0 10px 28px -14px rgba(10,20,50,.5);transition:border-color .15s ease,box-shadow .15s ease}',
+      // 折叠时：右上角（标题栏下方），不挡底部输入框、也不压侧边栏。
+      '.dsh-sb-launcher{position:fixed;right:18px;top:52px;z-index:6;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:0 10px 28px -14px rgba(10,20,50,.5);transition:border-color .15s ease,box-shadow .15s ease}',
       '.dsh-sb-launcher:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 12px 30px -12px rgba(10,20,50,.55)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
@@ -753,9 +753,18 @@ window.__ModuleLoader__.load({
       }, 460)
     }
 
-    /** 切到看板。宿主可能把 layout 挂在不同位置，两条都试，别静默失败。 */
+    /**
+     * 切到看板。
+     *
+     * 关键教训：插件的客户端 ctx **只有声明了 `inject` 的服务才有属性**。
+     * 我们的 `inject` 只有 `['slots']`，所以 `ctx.layout` 是 undefined ——
+     * 之前按钮点了没反应就是这个原因（异常被 catch 吞掉）。
+     * 现在优先用 `ctx.inject(['layout'])` 里拿到的那个实例（见 apply）。
+     */
+    let layoutService = null
+
     function gotoBoard(ctx) {
-      const candidates = [ctx?.layout, ctx?.get?.('layout')]
+      const candidates = [layoutService, ctx?.layout, ctx?.get?.('layout')]
       for (const layout of candidates) {
         if (layout && typeof layout.selectPanel === 'function') {
           try {
@@ -765,6 +774,16 @@ window.__ModuleLoader__.load({
             console.warn('[dsh-session-board] selectPanel 失败：', error?.message ?? error)
           }
         }
+      }
+      // 最后的兜底：点一下侧边栏里我们自己那个入口（宿主自己的选择路径一定可用）。
+      try {
+        const entry = document.querySelector('[aria-label="会话进程"], [data-panel-id="session-board"]')
+        if (entry !== null && typeof entry.click === 'function') {
+          entry.click()
+          return true
+        }
+      } catch {
+        /* 忽略 */
       }
       return false
     }
@@ -2101,16 +2120,18 @@ window.__ModuleLoader__.load({
       // 中间这几帧；宿主若在初始化后自己选了面板，后两次会把它纠回来。
       ctx.inject(['layout'], (scoped) => {
         if (scoped.layout === undefined || typeof scoped.layout.selectPanel !== 'function') return
+        // 保存下来给按钮用：客户端 ctx 只有声明了 inject 的服务才有属性。
+        layoutService = scoped.layout
         if (booted) return
         booted = true
         for (const delay of [100, 400, 900]) {
-          setTimeout(() => gotoBoard({ layout: scoped.layout }), delay)
+          setTimeout(() => gotoBoard(), delay)
         }
         // 兜底：4 秒后无论有没有切成功，都撤掉首屏遮罩，绝不盖死界面。
         setTimeout(dismissFirstPaint, 4000)
       })
 
-      // 入口：侧边栏底部一个（展开时可见）+ 折叠时底部居中的胶囊。
+      // 入口：侧边栏底部一个（展开时可见）+ 折叠时右上角的胶囊。
       slots.inject('sidebar.footer.action', () =>
         slots.register({ name: 'sidebar.footer.action', id: 'session-board', order: 10 }, SidebarActionEntry),
       )
