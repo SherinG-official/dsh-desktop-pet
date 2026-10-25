@@ -574,9 +574,9 @@ window.__ModuleLoader__.load({
       '.dsh-sb-divider{height:1px;background:var(--dsw-alias-border-l1);margin:4px 0}',
       '.dsh-sb-pet-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--dsw-alias-label-secondary)}',
       /* ---- 入口按钮 ---- */
-      // 折叠时：右上角（标题栏下方），不挡底部输入框、也不压侧边栏。
-      '.dsh-sb-launcher{position:fixed;right:18px;top:52px;z-index:6;display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:12px;line-height:1;font-family:inherit;cursor:pointer;box-shadow:0 10px 28px -14px rgba(10,20,50,.5);transition:border-color .15s ease,box-shadow .15s ease}',
-      '.dsh-sb-launcher:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 12px 30px -12px rgba(10,20,50,.55)}',
+      // 会话标题栏右侧（「结构」旁边）：图标 + 文字，和「新建会话」同一类控件。
+      '.dsh-sb-headerbtn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1;cursor:pointer;white-space:nowrap}',
+      '.dsh-sb-headerbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
       '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
       '.dsh-sb-action:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
@@ -806,46 +806,26 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 侧边栏折叠时的入口：底部居中一个小胶囊。
+     * 会话标题栏右侧的工具按钮（「结构」旁边那个位置）。
      *
-     * 不再放左下角 —— 那里正好压住侧边栏底部的按钮（截图实测）。
-     * overlay 容器 pointer-events:none，直接子元素 auto，所以按钮点得到。
+     * 用户的意思是：别用悬浮胶囊（会压住标题栏图标），做成和「新建会话」一样的
+     * **常驻图标按钮**。这个座位在侧边栏折叠时依然可见，所以它同时承担折叠态的入口。
      */
-    function CollapsedBoardLauncher(props) {
+    function HeaderBoardButton(props) {
       const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
       const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
-      const [collapsed, setCollapsed] = React.useState(() => {
-        try {
-          return document.querySelector('[data-sidebar-collapsed]') !== null
-        } catch {
-          return false
-        }
-      })
-
-      React.useEffect(() => {
-        // 侧边栏折叠状态挂在 frame 的 data 属性上，直接监听属性变化。
-        const observer = new MutationObserver(() => {
-          try {
-            setCollapsed(document.querySelector('[data-sidebar-collapsed]') !== null)
-          } catch {
-            /* 忽略 */
-          }
-        })
-        observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-sidebar-collapsed'] })
-        return () => observer.disconnect()
-      }, [])
-
-      if (active || !collapsed) return null
+      if (active) return null
       return h(
         'button',
         {
           type: 'button',
-          className: 'dsh-sb-launcher',
-          title: '回到会话进程',
+          className: 'dsh-sb-headerbtn',
+          title: '会话进程',
+          'aria-label': '会话进程',
           onClick: () => gotoBoard(props?.ctx),
         },
         h(WhaleTail, { size: 16 }),
-        h('span', null, '会话进程'),
+        h('span', { className: 'dsh-sb-headerbtn-text' }, '会话进程'),
       )
     }
 
@@ -2103,7 +2083,7 @@ window.__ModuleLoader__.load({
       const PanelEntry = (props) => React.createElement(Panel, { ...props, ctx })
       const IconEntry = (props) => React.createElement(PanelIcon, props)
       const SettingsEntry = () => React.createElement(SettingsPage)
-      const LauncherEntry = (props) => React.createElement(CollapsedBoardLauncher, { ...props, ctx })
+      const HeaderEntry = (props) => React.createElement(HeaderBoardButton, { ...props, ctx })
       const SidebarActionEntry = (props) => React.createElement(SidebarBoardAction, { ...props, ctx })
 
       slots.inject('main', () => slots.register({ name: 'main', key: PANEL_ID }, PanelEntry))
@@ -2131,12 +2111,15 @@ window.__ModuleLoader__.load({
         setTimeout(dismissFirstPaint, 4000)
       })
 
-      // 入口：侧边栏底部一个（展开时可见）+ 折叠时右上角的胶囊。
+      // 入口：侧边栏底部（展开时）+ 会话标题栏右侧（折叠时也在，和「结构」同一排）。
       slots.inject('sidebar.footer.action', () =>
         slots.register({ name: 'sidebar.footer.action', id: 'session-board', order: 10 }, SidebarActionEntry),
       )
-      slots.inject('shell.overlay', () =>
-        slots.register({ name: 'shell.overlay', id: 'session-board-launcher' }, LauncherEntry),
+      slots.inject('conversation.session.header.utilities', () =>
+        slots.register(
+          { name: 'conversation.session.header.utilities', id: 'session-board', order: 20, label: '会话进程' },
+          HeaderEntry,
+        ),
       )
     }
 
