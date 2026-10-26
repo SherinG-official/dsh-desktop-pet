@@ -209,14 +209,14 @@ window.__ModuleLoader__.load({
      */
     const FAIRY_TOKENS = {
       ...(WHALE_TOKENS || {}),
-      '--dsw-alias-brand-primary': '#ff7ad9',
-      '--dsw-alias-bg-base': '#0d0b16',
-      '--dsw-alias-bg-layer-1': '#151024',
-      '--dsw-alias-bg-layer-2': '#1c1530',
-      '--dsw-alias-border-l1': 'rgba(255,122,217,.22)',
-      '--dsw-alias-border-l2': 'rgba(122,240,255,.28)',
-      '--dsw-alias-label-primary': '#f4ecff',
-      '--dsw-alias-label-secondary': '#b9a9d6',
+      '--dsw-alias-brand-primary': { light: '#ff7ad9', dark: '#ff7ad9' },
+      '--dsw-alias-bg-base': { light: '#0d0b16', dark: '#0d0b16' },
+      '--dsw-alias-bg-layer-1': { light: '#151024', dark: '#151024' },
+      '--dsw-alias-bg-layer-2': { light: '#1c1530', dark: '#1c1530' },
+      '--dsw-alias-border-l1': { light: 'rgba(255,122,217,.22)', dark: 'rgba(255,122,217,.22)' },
+      '--dsw-alias-border-l2': { light: 'rgba(122,240,255,.28)', dark: 'rgba(122,240,255,.28)' },
+      '--dsw-alias-label-primary': { light: '#f4ecff', dark: '#f4ecff' },
+      '--dsw-alias-label-secondary': { light: '#b9a9d6', dark: '#b9a9d6' },
     }
 
     const FAIRY_CSS = `
@@ -636,6 +636,9 @@ window.__ModuleLoader__.load({
       '.dsh-sb-headbtn:active{transform:translateY(.5px)}',
       /* ---- 壁纸层：整站铺底 + 暗纱 + 让宿主的不透明面板透出来 ---- */
       'html[data-dsh-sb-wallpaper="on"] body{background-image:var(--dsh-sb-wallpaper-url,none);background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat}',
+      // 关键：宿主把底色画在 --dsw-alias-bg-base 上（很多层都用它）。把变量本身改成半透明，
+      // 比逐个类名覆盖可靠；`!important` 优先于主题的内联变量。
+      'html[data-dsh-sb-wallpaper="on"]{--dsw-alias-bg-base:rgba(8,10,18,.38)!important}',
       'html[data-dsh-sb-wallpaper="on"] body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(6,9,18,.42),rgba(6,9,18,.62))}',
       'html[data-dsh-sb-wallpaper="on"] [class*="_frame"],html[data-dsh-sb-wallpaper="on"] [class*="_centerCol"],html[data-dsh-sb-wallpaper="on"] [class*="_sidebarCol"]{background:transparent!important}',
       'html[data-dsh-sb-wallpaper="on"] [data-composer-card]{background-color:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 86%,transparent)}',
