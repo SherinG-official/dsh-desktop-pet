@@ -410,6 +410,22 @@ window.__ModuleLoader__.load({
       removeRefractFilter()
     }
 
+    /**
+     * 壁纸：host 路由取 `wallpapers/` 里最新一张图。
+     * 只有声明了 `wallpaper: true` 的皮肤才铺；切走时把属性/变量一起清掉。
+     */
+    function applyWallpaper(skin) {
+      const html = document.documentElement
+      if (!skin || skin.wallpaper !== true) {
+        html.removeAttribute('data-dsh-sb-wallpaper')
+        html.style.removeProperty('--dsh-sb-wallpaper-url')
+        return
+      }
+      html.setAttribute('data-dsh-sb-wallpaper', 'on')
+      // 带时间戳：换图后 URL 变化，不吃旧缓存。
+      html.style.setProperty('--dsh-sb-wallpaper-url', `url("/api/session-board/wallpaper?t=${Date.now()}")`)
+    }
+
     function applyResolvedSkin(skin) {
       teardownSkin()
       if (!skin) return
@@ -419,6 +435,7 @@ window.__ModuleLoader__.load({
       // 切走时属性和 <style> 一起消失，不会留残影。
       document.documentElement.setAttribute('data-dsh-sb-skin', skin.id)
       if (skin.id === 'glass') ensureRefractFilter()
+      applyWallpaper(skin)
       if (skin.tokens && skinTheme && typeof skinTheme.overrideTokens === 'function') {
         disposeTokens = skinTheme.overrideTokens('dsh-session-board:skin', skin.tokens)
       }
@@ -435,6 +452,7 @@ window.__ModuleLoader__.load({
           /* 忽略 */
         }
         if (styleEl) styleEl.remove()
+        applyWallpaper(null)
       }
       activeSkinId = skin.id
       storeSkin(skin.id)
@@ -616,6 +634,11 @@ window.__ModuleLoader__.load({
       '.dsh-sb-headbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;line-height:1;cursor:pointer;-webkit-appearance:none;appearance:none}',
       '.dsh-sb-headbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
       '.dsh-sb-headbtn:active{transform:translateY(.5px)}',
+      /* ---- 壁纸层：整站铺底 + 暗纱 + 让宿主的不透明面板透出来 ---- */
+      'html[data-dsh-sb-wallpaper="on"] body{background-image:var(--dsh-sb-wallpaper-url,none);background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat}',
+      'html[data-dsh-sb-wallpaper="on"] body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(6,9,18,.42),rgba(6,9,18,.62))}',
+      'html[data-dsh-sb-wallpaper="on"] [class*="_frame"],html[data-dsh-sb-wallpaper="on"] [class*="_centerCol"],html[data-dsh-sb-wallpaper="on"] [class*="_sidebarCol"]{background:transparent!important}',
+      'html[data-dsh-sb-wallpaper="on"] [data-composer-card]{background-color:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 86%,transparent)}',
       // 右侧面板容器：占满可用高度、窄宽度下按单列排。
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
       '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
