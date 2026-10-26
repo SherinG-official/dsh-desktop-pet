@@ -28,7 +28,6 @@ window.__ModuleLoader__.load({
 
     const PANEL_ID = 'session-board'
     /** 进程内只做一次"启动即进入看板"（热重载不重复抢焦点）。 */
-    let booted = false
     /** 桌宠立绘的来源（host 侧 lib/pet.js 把 dsh-desktop-pet 的 PNG 转出来）。 */
     const PET_ROUTE = '/api/session-board/pet/'
     /** 桌宠自己的控制路由：/dsh-desktop-pet?action=status|toggle。 */
@@ -234,7 +233,6 @@ window.__ModuleLoader__.load({
         accent: '#7aa2ff',
         tagline: '冷调蓝紫 · 磨砂玻璃 · 悬浮',
         material: 'glass',
-        wallpaper: true,
         tokens: GLASS_TOKENS,
         css: GLASS_GLOBAL_CSS,
       },
@@ -244,7 +242,6 @@ window.__ModuleLoader__.load({
         accent: '#ff7ad9',
         tagline: '终端风 · 洋红/青 · 壁纸适配',
         material: 'terminal',
-        wallpaper: true,
         tokens: FAIRY_TOKENS,
         css: FAIRY_CSS,
       },
@@ -411,27 +408,9 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 壁纸：host 路由取 `wallpapers/` 里最新一张图。
-     * 只有声明了 `wallpaper: true` 的皮肤才铺；切走时把属性/变量一起清掉。
-     */
-    /**
      * 壁纸总开关：暂时关闭（实测铺不出来，先回到实色皮肤，避免半透明底发灰）。
      * 想重启实验时把它改成 true 即可，路由与 CSS 都还在。
      */
-    const WALLPAPER_ENABLED = false
-
-    function applyWallpaper(skin) {
-      const html = document.documentElement
-      const on = WALLPAPER_ENABLED && skin !== null && skin !== undefined && skin.wallpaper === true
-      if (!on) {
-        html.removeAttribute('data-dsh-sb-wallpaper')
-        html.style.removeProperty('--dsh-sb-wallpaper-url')
-        return
-      }
-      html.setAttribute('data-dsh-sb-wallpaper', 'on')
-      // 带时间戳：换图后 URL 变化，不吃旧缓存。
-      html.style.setProperty('--dsh-sb-wallpaper-url', `url("/api/session-board/wallpaper?t=${Date.now()}")`)
-    }
 
     function applyResolvedSkin(skin) {
       teardownSkin()
@@ -442,7 +421,6 @@ window.__ModuleLoader__.load({
       // 切走时属性和 <style> 一起消失，不会留残影。
       document.documentElement.setAttribute('data-dsh-sb-skin', skin.id)
       if (skin.id === 'glass') ensureRefractFilter()
-      applyWallpaper(skin)
       if (skin.tokens && skinTheme && typeof skinTheme.overrideTokens === 'function') {
         disposeTokens = skinTheme.overrideTokens('dsh-session-board:skin', skin.tokens)
       }
@@ -459,7 +437,6 @@ window.__ModuleLoader__.load({
           /* 忽略 */
         }
         if (styleEl) styleEl.remove()
-        applyWallpaper(null)
       }
       activeSkinId = skin.id
       storeSkin(skin.id)
@@ -636,7 +613,6 @@ window.__ModuleLoader__.load({
       /* ---- 入口按钮（只在侧边栏隐藏时出现，位置对齐左上角「新建会话 ⊕」）---- */
       // 放在窗口标题栏**右端**（窗口按钮左侧的空白区），完全避开左侧菜单；
       // 标题栏是拖拽区，必须显式 no-drag 才能点。
-      '.dsh-sb-composerbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:0 0 auto}',
       // 头部图标：和「结构」同一排，用透明的图标按钮，不要浏览器默认的灰底
       '.dsh-sb-headbtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;margin:0;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;line-height:1;cursor:pointer;-webkit-appearance:none;appearance:none}',
       '.dsh-sb-headbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
@@ -701,15 +677,7 @@ window.__ModuleLoader__.load({
       '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:1 1 100%;width:100%;margin-top:12px}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
-      '.dsh-sb-bottombar{display:none;align-items:center;gap:6px;margin:0 auto;padding:4px 12px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer}',
-      'body:has([data-sidebar-collapsed]) .dsh-sb-bottombar{display:inline-flex}',
-      '.dsh-sb-bottombar:hover{color:var(--dsw-alias-label-primary)}',
-      '.dsh-sb-launcher:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l1)}',
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
-      '.dsh-sb-action{display:flex;align-items:center;gap:6px;background:none;border:0;padding:6px 8px;border-radius:8px;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}',
-      '.dsh-sb-action:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
-      '.dsh-sb-action.is-active{color:var(--dsw-alias-brand-primary)}',
-      '.dsh-sb-action-text{overflow:hidden;text-overflow:ellipsis}',
       /* ---- 工作组卡片 ---- */
       '.dsh-sb-group{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}',
       '.dsh-sb-group:hover{border-color:var(--dsw-alias-brand-primary);box-shadow:0 6px 18px -10px rgba(20,40,90,.35)}',
@@ -860,26 +828,7 @@ window.__ModuleLoader__.load({
     const useNoStatus = () => null
     const useAlwaysActive = () => true
     /** 没有 usePanelInfo 时的兜底：当作"别的面板处于激活态"，浮动入口照常显示。 */
-    const useNoPanelInfo = (selector) => selector({})
 
-    /**
-     * 首屏遮罩由 **host** 在文档解析阶段注入（见 lib/boot/firstpaint.js）。
-     * 这里只负责：切到看板后把它淡出移除，外加一个 4 秒兜底 —— 绝不能盖死界面。
-     */
-    const FIRSTPAINT_ID = 'dsh-sb-firstpaint'
-
-    function dismissFirstPaint() {
-      const node = document.getElementById(FIRSTPAINT_ID)
-      if (node === null) return
-      node.classList.add('is-out')
-      setTimeout(() => {
-        try {
-          node.remove()
-        } catch {
-          /* 已经没了 */
-        }
-      }, 460)
-    }
 
     /**
      * 切到看板。
@@ -889,7 +838,6 @@ window.__ModuleLoader__.load({
      * 之前按钮点了没反应就是这个原因（异常被 catch 吞掉）。
      * 现在优先用 `ctx.inject(['layout'])` 里拿到的那个实例（见 apply）。
      */
-    let layoutService = null
     /** B 方案：从看板点会话后的"切换窗口期"，窗口期内 tab 被宿主清掉就补回。 */
     let switchWindowUntil = 0
     let composerTrapInstalled = false
@@ -899,155 +847,12 @@ window.__ModuleLoader__.load({
      * 在到达 React 之前吞掉 —— 表现就是"有 hover/tooltip，但 onClick 不触发"。
      * 所以这里在 **document 的 capture 阶段**自己抓一次最原始的指针事件。
      */
-    function installComposerTrap(ctx) {
-      if (composerTrapInstalled) return
-      composerTrapInstalled = true
-      const handle = (event) => {
-        // 宿主可能把 slot 渲染进 shadow DOM：跨过边界后 event.target 会被
-        // 重定向成宿主元素，closest 找不到我们的按钮 —— 必须用 composedPath。
-        let hit = false
-        try {
-          const path = typeof event.composedPath === 'function' ? event.composedPath() : []
-          hit = path.some(
-            (node) => node instanceof Element && node.classList !== undefined && node.classList.contains('dsh-sb-composerbtn'),
-          )
-        } catch {
-          hit = false
-        }
-        if (!hit) {
-          const target = event.target
-          if (!(target instanceof Element) || target.closest('.dsh-sb-composerbtn') === null) return
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        gotoBoard(ctx)
-      }
-      // 挂在 window 的 capture 阶段：宿主若在 document 上 capture 就吞事件，
-      // window 这一层比它更早；三种事件都试，哪个先到算哪个。
-      for (const type of ['pointerdown', 'mousedown', 'click']) {
-        window.addEventListener(type, handle, true)
-      }
-    }
-
-    function gotoBoard(ctx) {
-      const candidates = [layoutService, ctx?.layout, ctx?.get?.('layout')]
-      let lastError = null
-
-      /** 兜底：点宿主自己渲染的侧边栏入口（必须排除我们自己的按钮）。 */
-      const clickSidebarEntry = () => {
-        try {
-          const entries = document.querySelectorAll('[aria-label*="会话进程"]')
-          for (const entry of entries) {
-            if (entry.closest('[data-dsh-sb-own]') !== null) continue
-            if (typeof entry.click === 'function') {
-              entry.click()
-              return true
-            }
-          }
-        } catch {
-          /* 忽略 */
-        }
-        return false
-      }
-
-      const fail = () => {
-        // 不用 alert：Electron 渲染层可能把对话框禁掉，之前"毫无反应"就包含了这一层。
-        // 直接把原因画在页面顶部，8 秒后自己消失。
-        try {
-          let node = document.getElementById('dsh-sb-error-toast')
-          if (node === null) {
-            node = document.createElement('div')
-            node.id = 'dsh-sb-error-toast'
-            document.body.appendChild(node)
-          }
-          node.className = 'dsh-sb-toast'
-          node.textContent = `会话进程打不开：${lastError ?? '拿不到 layout 服务（layoutService 为空）'}`
-          setTimeout(() => {
-            try {
-              node.remove()
-            } catch {
-              /* 忽略 */
-            }
-          }, 8000)
-        } catch {
-          /* 忽略 */
-        }
-        return false
-      }
-
-      for (const layout of candidates) {
-        if (layout && typeof layout.selectPanel === 'function') {
-          try {
-            layout.selectPanel(PANEL_ID)
-          } catch (error) {
-            lastError = error?.message ?? String(error)
-            console.warn('[dsh-session-board] selectPanel 失败：', lastError)
-            continue
-          }
-          // selectPanel 不抛 ≠ 真的切过去了。两种失败都算：
-          //   1) 面板根节点根本没挂载
-          //   2) 挂载了但不可见（宽高为 0 / 被隐藏）
-          const visible = () => {
-            const node = document.querySelector('.dsh-sb')
-            if (node === null) return false
-            const rect = node.getBoundingClientRect()
-            return rect.width > 0 && rect.height > 0
-          }
-          setTimeout(() => {
-            if (visible()) return
-            if (clickSidebarEntry()) {
-              setTimeout(() => {
-                if (visible()) return
-                lastError = '调用了 layout.selectPanel，但看板没有显示（面板已挂载却不可见）'
-                fail()
-              }, 400)
-              return
-            }
-            lastError = '调用了 layout.selectPanel，但看板没有显示，且找不到侧边栏入口'
-            fail()
-          }, 250)
-          return true
-        }
-      }
-      if (clickSidebarEntry()) return true
-      return fail()
-    }
-
     /** 侧边栏底部（Settings 旁边）的入口，侧边栏展开时用。 */
-    function SidebarBoardAction(props) {
-      const usePanelInfo = typeof props?.usePanelInfo === 'function' ? props.usePanelInfo : useNoPanelInfo
-      const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
-      return h(
-        'button',
-        {
-          type: 'button',
-          className: `dsh-sb-action${active ? ' is-active' : ''}`,
-          title: '打开会话进程',
-          onClick: () => gotoBoard(props?.ctx),
-        },
-        h(WhaleTail, { size: 16 }),
-        h('span', { className: 'dsh-sb-action-text' }, '会话进程'),
-      )
-    }
-
     /**
      * 兜底入口：`shell.bottom` 里的一条细条，只在侧边栏折叠时显示
      * （用 CSS `:has([data-sidebar-collapsed])` 控制，不需要 JS 监听）。
      * 它在布局流里，不覆盖任何控件；宿主保证这个座位常驻。
      */
-    function BottomBoardEntry(props) {
-      return h(
-        'button',
-        {
-          type: 'button',
-          className: 'dsh-sb-bottombar',
-          title: '打开会话进程',
-          onClick: () => gotoBoard(props?.ctx),
-        },
-        h(WhaleTail, { size: 14 }),
-        h('span', null, '会话进程'),
-      )
-    }
     /** 右侧面板 tab 的 id / kind（照抄 dsh-chemflow 的两段式做法）。 */
     const TAB_ID = 'dsh-session-board'
     const TAB_KIND = 'session-board'
@@ -1102,30 +907,6 @@ window.__ModuleLoader__.load({
     /** 右侧面板里的看板容器。 */
     function RightPaneBoard(props) {
       return h('div', { className: 'dsh-sb-pane' }, h(Panel, { ...props }))
-    }
-
-    function ComposerBoardButton(props) {
-      const open = (event) => {
-        if (event !== undefined && typeof event.preventDefault === 'function') event.preventDefault()
-        if (event !== undefined && typeof event.stopPropagation === 'function') event.stopPropagation()
-        openBoardPane(props?.ctx)
-      }
-      return h(
-        'button',
-        {
-          type: 'button',
-          className: 'dsh-sb-composerbtn',
-          title: '打开会话进程',
-          'aria-label': '打开会话进程',
-          'data-dsh-sb-own': '1',
-          // composer 那层可能有拖拽/遮罩抢事件：click 之外再绑 pointerdown，
-          // 哪个先到算哪个（gotoBoard 幂等）。
-          onClick: open,
-          onPointerDown: open,
-          style: { pointerEvents: 'auto' },
-        },
-        h(WhaleTail, { size: 15 }),
-      )
     }
 
     /** 没有 useWorkspaces 标准 prop 时的兜底：当成"没有任何归档"。 */
@@ -1236,91 +1017,9 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PanelIcon(props) {
-      const size = Number.isFinite(props?.size) ? props.size : 18
-      const useSessions = typeof props?.useSessions === 'function' ? props.useSessions : useNoSessions
-      const useSessionStatus = typeof props?.useSessionStatus === 'function' ? props.useSessionStatus : useNoStatus
-      const byId = useSessions((state) => (state && state.byId) || EMPTY_BY_ID)
-      const statuses = useSessionStatus((value) => value)
-
-      // 有会话在等回答时，图标上点一个樱粉点——唯一需要人立刻知道的信号。
-      let waiting = 0
-      if (statuses && typeof statuses.get === 'function') {
-        for (const id of Object.keys(byId)) {
-          const status = statuses.get(id)
-          if (status && status.pendingInteraction) waiting += 1
-        }
-      }
-
-      return h(
-        'svg',
-        {
-          width: size,
-          height: size,
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 1.6,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          'aria-hidden': 'true',
-        },
-        h('rect', { x: 3, y: 4, width: 5.5, height: 16, rx: 1.8 }),
-        h('rect', { x: 9.5, y: 4, width: 5.5, height: 10, rx: 1.8 }),
-        h('rect', { x: 16, y: 4, width: 5, height: 13, rx: 1.8 }),
-        waiting > 0 ? h('circle', { cx: 19.2, cy: 4.8, r: 2.4, fill: '#ff9ec4', stroke: 'none' }) : null,
-      )
-    }
-
     /* ------------------------------------------------------------------ */
     /* 组件                                                                */
     /* ------------------------------------------------------------------ */
-
-    function SessionCard(props) {
-      const { row, bucket, now, cursor, onOpen, groups } = props
-      const title = typeof row.title === 'string' && row.title.trim() !== '' ? row.title : '(无标题)'
-      const turns = row.projectionValues?.sessionStats?.turns
-      const at = Number.isFinite(row.updatedAt) ? row.updatedAt : null
-      const where = workspaceName(row.cwd)
-      const belongs = Array.isArray(groups) ? groups : []
-
-      return h(
-        'button',
-        {
-          type: 'button',
-          className: `dsh-sb-card${cursor ? ' is-cursor' : ''}`,
-          'data-bucket': bucket,
-          draggable: true,
-          onDragStart: (event) => {
-            try {
-              event.dataTransfer.setData(DRAG_TYPE, row.id)
-              event.dataTransfer.effectAllowed = 'move'
-            } catch {
-              /* 没有 dataTransfer 就算了 */
-            }
-          },
-          title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入这个对话 · 可拖到工作组`,
-          onClick: onOpen,
-        },
-        h(
-          'div',
-          { className: 'dsh-sb-card-title' },
-          h('span', null, title),
-        ),
-        h(
-          'div',
-          { className: 'dsh-sb-card-meta' },
-          h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
-          bucket === 'working' ? h('span', null, '正在跑') : null,
-          where ? h('span', { className: 'dsh-sb-card-path' }, where) : null,
-          Number.isFinite(turns) && turns > 0 ? h('span', null, `${turns} turns`) : null,
-          belongs.length > 0
-            ? h('span', { className: 'dsh-sb-badge' }, `组 ${belongs.length}`)
-            : null,
-          h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
-        ),
-      )
-    }
 
     /** 组内一行会话：可拖出去（拖到「未分组」就是移出本组）。 */
     function MemberRow(props) {
@@ -1655,7 +1354,6 @@ window.__ModuleLoader__.load({
 
       // 看板一激活就撤掉 host 注入的首屏遮罩（两段式淡出）。
       React.useEffect(() => {
-        if (active) dismissFirstPaint()
       }, [active])
       // 归档是工作区层的状态：SessionSummary 里没有，只能从 useWorkspaces 的快照拿。
       const archivedIds = useWorkspaces((state) => state?.archivedSessionIds ?? EMPTY_ARCHIVED)
@@ -1925,10 +1623,6 @@ window.__ModuleLoader__.load({
         bucket: entry.bucket,
       }))
       const ungroupedBucket = groupBucketOf(ungroupedMembers.map((member) => member.bucket))
-      const ungroupedLatest = ungroupedMembers.reduce(
-        (max, member) => Math.max(max, Number(member.row.updatedAt) || 0),
-        0,
-      )
       const ungroupedExpanded = overrides.get(UNGROUPED_ID) === true
       const toggleUngrouped = () => toggleGroup(UNGROUPED_ID, ungroupedExpanded)
       // 立绘跟着看板状态换表情。
