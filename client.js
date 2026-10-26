@@ -414,9 +414,16 @@ window.__ModuleLoader__.load({
      * 壁纸：host 路由取 `wallpapers/` 里最新一张图。
      * 只有声明了 `wallpaper: true` 的皮肤才铺；切走时把属性/变量一起清掉。
      */
+    /**
+     * 壁纸总开关：暂时关闭（实测铺不出来，先回到实色皮肤，避免半透明底发灰）。
+     * 想重启实验时把它改成 true 即可，路由与 CSS 都还在。
+     */
+    const WALLPAPER_ENABLED = false
+
     function applyWallpaper(skin) {
       const html = document.documentElement
-      if (!skin || skin.wallpaper !== true) {
+      const on = WALLPAPER_ENABLED && skin !== null && skin !== undefined && skin.wallpaper === true
+      if (!on) {
         html.removeAttribute('data-dsh-sb-wallpaper')
         html.style.removeProperty('--dsh-sb-wallpaper-url')
         return
