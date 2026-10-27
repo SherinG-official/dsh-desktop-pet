@@ -699,6 +699,14 @@ window.__ModuleLoader__.load({
       '.dsh-sb-member-main{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;padding:4px 6px;border-radius:8px;color:inherit;font:inherit;text-align:left;cursor:pointer}',
       '.dsh-sb-member-main:hover{background:var(--dsw-alias-bg-layer-2)}',
       '.dsh-sb-member-title{flex:1 1 auto;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      // 改名：hover 露出铅笔，双击标题也能进编辑
+      '.dsh-sb-edit{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:12px;opacity:0;transition:opacity .12s ease}',
+      '.dsh-sb-member:hover .dsh-sb-edit,.dsh-sb-edit:focus-visible{opacity:1}',
+      '.dsh-sb-pane .dsh-sb-edit{opacity:.55}',
+      '.dsh-sb-pane .dsh-sb-member:hover .dsh-sb-edit{opacity:1}',
+      '.dsh-sb-edit:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary)}',
+      '.dsh-sb-member-editing{background:var(--dsw-alias-bg-layer-2)}',
+      '.dsh-sb-member-input{flex:1 1 auto;min-width:0;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-brand-primary);border-radius:6px;color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;padding:2px 6px;outline:none}',
       '.dsh-sb-x{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:14px}',
       '.dsh-sb-x:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary)}',
       '.dsh-sb-member-empty{font-size:11px;color:var(--dsw-alias-label-secondary);padding:6px 2px}',
@@ -852,6 +860,53 @@ window.__ModuleLoader__.load({
       return { id: TAB_ID, kind: TAB_KIND, priority: 'extension', title: () => '会话进程' }
     }
 
+    /** 插件 ctx（apply 时记下来，给组件里的动作函数用）。 */
+    let pluginCtx = null
+
+    /** 页面顶部的轻提示：Electron 里 alert 可能被禁，统一走这个。 */
+    function showToast(message) {
+      try {
+        let node = document.getElementById('dsh-sb-error-toast')
+        if (node === null) {
+          node = document.createElement('div')
+          node.id = 'dsh-sb-error-toast'
+          document.body.appendChild(node)
+        }
+        node.className = 'dsh-sb-toast'
+        node.textContent = message
+        setTimeout(() => {
+          try {
+            node.remove()
+          } catch {
+            /* 已经没了 */
+          }
+        }, 6000)
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    /**
+     * 重命名会话：走宿主的 remote.session.rename（和侧边栏右键改名同一条链路）。
+     * 宿主会自己校验标题、写入 title projection，我们不需要手动刷新列表。
+     */
+    async function renameSession(sessionId, title) {
+      const ctx = pluginCtx
+      const remote = ctx?.remote?.session ?? ctx?.get?.('remote')?.session
+      if (remote === undefined || remote === null || typeof remote.rename !== 'function') {
+        return { ok: false, error: '当前宿主没有开放重命名接口' }
+      }
+      try {
+        const result = await remote.rename({ sessionId, title })
+        if (result !== undefined && result !== null && result.ok === false) {
+          return { ok: false, error: result.error?.message ?? '重命名失败' }
+        }
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error?.message ?? String(error) }
+      }
+    }
+
     /** 打开右侧面板的「会话进程」tab（不切主面板、不影响当前会话）。 */
     function openBoardPane(ctx) {
       const sidebar = ctx?.get?.('sidebarRight') ?? ctx?.sidebarRight
@@ -863,19 +918,7 @@ window.__ModuleLoader__.load({
           console.warn('[dsh-session-board] openTab 失败：', error?.message ?? error)
         }
       }
-      try {
-        let node = document.getElementById('dsh-sb-error-toast')
-        if (node === null) {
-          node = document.createElement('div')
-          node.id = 'dsh-sb-error-toast'
-          document.body.appendChild(node)
-        }
-        node.className = 'dsh-sb-toast'
-        node.textContent = '会话进程打不开：拿不到 sidebarRight 服务或 openTab'
-        setTimeout(() => node.remove(), 6000)
-      } catch {
-        /* 忽略 */
-      }
+      showToast('会话进程打不开：拿不到 sidebarRight 服务或 openTab')
       return false
     }
 
@@ -1011,18 +1054,42 @@ window.__ModuleLoader__.load({
     /* 组件                                                                */
     /* ------------------------------------------------------------------ */
 
-    /** 组内一行会话：可拖出去（拖到「未分组」就是移出本组）。 */
+    /** 组内一行会话：可拖出去（拖到「未分组」就是移出本组），也可以在原地改名。 */
     function MemberRow(props) {
       const { id, groupId, row, bucket, now, onOpen, onRemove } = props
       const title = typeof row.title === 'string' && row.title.trim() !== '' ? row.title : '(无标题)'
       const at = Number.isFinite(row.updatedAt) ? row.updatedAt : null
+      const [editing, setEditing] = React.useState(false)
+      const [draft, setDraft] = React.useState(title)
+
+      React.useEffect(() => {
+        if (!editing) setDraft(title)
+      }, [title, editing])
+
+      const submit = async () => {
+        const next = draft.trim()
+        if (next === '' || next === title) {
+          setEditing(false)
+          setDraft(title)
+          return
+        }
+        const result = await renameSession(id, next)
+        setEditing(false)
+        if (!result.ok) showToast(`重命名失败：${result.error}`)
+      }
+
+      const cancel = () => {
+        setEditing(false)
+        setDraft(title)
+      }
 
       return h(
         'div',
         {
           className: 'dsh-sb-member',
-          draggable: true,
+          draggable: !editing,
           onDragStart: (event) => {
+            if (editing) return
             try {
               event.dataTransfer.setData(DRAG_TYPE, id)
               event.dataTransfer.setData(`${DRAG_TYPE}-group`, groupId)
@@ -1032,17 +1099,64 @@ window.__ModuleLoader__.load({
             }
           },
         },
+        editing
+          ? h(
+              'div',
+              { className: 'dsh-sb-member-main dsh-sb-member-editing' },
+              h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+              h('input', {
+                className: 'dsh-sb-member-input',
+                value: draft,
+                autoFocus: true,
+                spellCheck: false,
+                onChange: (event) => setDraft(event.target.value),
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void submit()
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancel()
+                  }
+                },
+                onBlur: () => {
+                  void submit()
+                },
+                onClick: (event) => event.stopPropagation(),
+              }),
+            )
+          : h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-sb-member-main',
+                title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入；双击改名`,
+                onClick: onOpen,
+                onDoubleClick: (event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setDraft(title)
+                  setEditing(true)
+                },
+              },
+              h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
+              h('span', { className: 'dsh-sb-member-title' }, title),
+              h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
+            ),
         h(
           'button',
           {
             type: 'button',
-            className: 'dsh-sb-member-main',
-            title: `${title}\n${row.cwd ?? ''}\n最近活动：${formatDateTime(at)}\n点击进入这个对话`,
-            onClick: onOpen,
+            className: 'dsh-sb-edit',
+            title: '重命名会话',
+            'aria-label': '重命名会话',
+            onClick: (event) => {
+              event.stopPropagation()
+              setDraft(title)
+              setEditing(true)
+            },
           },
-          h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
-          h('span', { className: 'dsh-sb-member-title' }, title),
-          h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
+          '✎',
         ),
         onRemove
           ? h(
@@ -2022,6 +2136,8 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
 
     function apply(ctx) {
+      // 组件里的动作函数（改名/打开 tab）需要用到插件 ctx。
+      pluginCtx = ctx
       // 样式：本面板自己的那一层（只作用在 .dsh-sb 里）。
       const style = document.createElement('style')
       style.setAttribute('data-dsh-session-board', '')
