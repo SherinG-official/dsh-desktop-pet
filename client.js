@@ -707,6 +707,11 @@ window.__ModuleLoader__.load({
       '.dsh-sb-edit:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-brand-primary)}',
       '.dsh-sb-member-editing{background:var(--dsw-alias-bg-layer-2)}',
       '.dsh-sb-member-input{flex:1 1 auto;min-width:0;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-brand-primary);border-radius:6px;color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;padding:2px 6px;outline:none}',
+      '.dsh-sb-ok,.dsh-sb-cancel{flex:0 0 auto;border-radius:6px;border:1px solid transparent;padding:2px 8px;font:inherit;font-size:11px;line-height:1.5;cursor:pointer}',
+      '.dsh-sb-ok{background:var(--dsw-alias-brand-primary);color:#fff}',
+      '.dsh-sb-ok:hover{filter:brightness(1.06)}',
+      '.dsh-sb-cancel{background:transparent;border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}',
+      '.dsh-sb-cancel:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
       '.dsh-sb-x{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:14px}',
       '.dsh-sb-x:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary)}',
       '.dsh-sb-member-empty{font-size:11px;color:var(--dsw-alias-label-secondary);padding:6px 2px}',
@@ -1150,11 +1155,34 @@ window.__ModuleLoader__.load({
                     cancel()
                   }
                 },
-                onBlur: () => {
-                  void submit()
-                },
                 onClick: (event) => event.stopPropagation(),
               }),
+              // 显式确认/取消：Enter/Esc 之外给可以点的按钮（输入框失焦不再自动提交，
+              // 否则点「取消」会先触发提交）。
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-sb-ok',
+                  onClick: (event) => {
+                    event.stopPropagation()
+                    void submit()
+                  },
+                },
+                '确定',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-sb-cancel',
+                  onClick: (event) => {
+                    event.stopPropagation()
+                    cancel()
+                  },
+                },
+                '取消',
+              ),
             )
           : h(
               'button',
@@ -1174,21 +1202,23 @@ window.__ModuleLoader__.load({
               h('span', { className: 'dsh-sb-member-title' }, title),
               h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
             ),
-        h(
-          'button',
-          {
-            type: 'button',
-            className: 'dsh-sb-edit',
-            title: '重命名会话',
-            'aria-label': '重命名会话',
-            onClick: (event) => {
-              event.stopPropagation()
-              setDraft(title)
-              setEditing(true)
-            },
-          },
-          '✎',
-        ),
+        editing
+          ? null
+          : h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsh-sb-edit',
+                title: '重命名会话',
+                'aria-label': '重命名会话',
+                onClick: (event) => {
+                  event.stopPropagation()
+                  setDraft(title)
+                  setEditing(true)
+                },
+              },
+              '✎',
+            ),
         onRemove
           ? h(
               'button',
