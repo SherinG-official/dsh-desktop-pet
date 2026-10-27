@@ -699,6 +699,11 @@ window.__ModuleLoader__.load({
       '.dsh-sb-member-main{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;padding:4px 6px;border-radius:8px;color:inherit;font:inherit;text-align:left;cursor:pointer}',
       '.dsh-sb-member-main:hover{background:var(--dsw-alias-bg-layer-2)}',
       '.dsh-sb-member-title{flex:1 1 auto;min-width:0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      // 会话名 + 所属工作区：名字后面紧跟一个淡淡的工作区标签
+      '.dsh-sb-member-namewrap{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px}',
+      '.dsh-sb-member-namewrap .dsh-sb-member-title{flex:0 1 auto}',
+      '.dsh-sb-ws{flex:0 0 auto;max-width:104px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1.6;color:var(--dsw-alias-label-secondary);border:1px solid var(--dsw-alias-border-l1);border-radius:999px;padding:0 6px;opacity:.8}',
+      '.dsh-sb-pane .dsh-sb-ws{max-width:76px;font-size:9.5px;padding:0 5px}',
       '.dsh-sb-x{flex:0 0 auto;width:20px;height:20px;line-height:1;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;font-size:14px}',
       '.dsh-sb-x:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-state-error-primary)}',
       '.dsh-sb-member-empty{font-size:11px;color:var(--dsw-alias-label-secondary);padding:6px 2px}',
@@ -808,6 +813,49 @@ window.__ModuleLoader__.load({
       if (age <= IDLE_WINDOW_MS) return 'idle'
       if (age <= ENDED_WINDOW_MS) return 'ended'
       return 'older'
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 工作区名                                                            */
+    /* ------------------------------------------------------------------ */
+
+    /** 工作区快照里字段名随版本不同，这里做一次兼容提取。 */
+    function workspaceRowsOf(snapshot) {
+      const candidate = snapshot?.workspaces ?? snapshot?.list ?? snapshot?.items
+      if (Array.isArray(candidate)) return candidate
+      if (Array.isArray(candidate?.items)) return candidate.items
+      return []
+    }
+
+    function normalizeDir(value) {
+      return typeof value === 'string'
+        ? value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+        : ''
+    }
+
+    /**
+     * 生成 `(sessionRow) => 工作区显示名`。
+     * 先用会话的 cwd 匹配工作区目录（最长前缀），匹配不上就退回目录末段。
+     */
+    function buildWorkspaceLookup(rows) {
+      const entries = []
+      for (const item of Array.isArray(rows) ? rows : []) {
+        const dir = normalizeDir(item?.directory ?? item?.cwd ?? item?.path ?? item?.root)
+        const label = item?.label ?? item?.name ?? item?.title ?? ''
+        if (dir !== '' && typeof label === 'string' && label.trim() !== '') {
+          entries.push({ dir, label: label.trim() })
+        }
+      }
+      entries.sort((a, b) => b.dir.length - a.dir.length)
+      return (row) => {
+        const cwd = normalizeDir(row?.cwd)
+        if (cwd === '') return ''
+        for (const entry of entries) {
+          if (cwd === entry.dir || cwd.startsWith(`${entry.dir}/`)) return entry.label
+        }
+        const parts = String(row?.cwd ?? '').split(/[\\/]+/).filter(Boolean)
+        return parts.length === 0 ? '' : parts[parts.length - 1]
+      }
     }
 
     /* ------------------------------------------------------------------ */
@@ -1013,7 +1061,7 @@ window.__ModuleLoader__.load({
 
     /** 组内一行会话：可拖出去（拖到「未分组」就是移出本组）。 */
     function MemberRow(props) {
-      const { id, groupId, row, bucket, now, onOpen, onRemove } = props
+      const { id, groupId, row, bucket, now, onOpen, onRemove, wsLabel = '' } = props
       const title = typeof row.title === 'string' && row.title.trim() !== '' ? row.title : '(无标题)'
       const at = Number.isFinite(row.updatedAt) ? row.updatedAt : null
 
@@ -1041,7 +1089,14 @@ window.__ModuleLoader__.load({
             onClick: onOpen,
           },
           h('span', { className: `dsh-sb-dot ${bucket}`, 'aria-hidden': 'true' }),
-          h('span', { className: 'dsh-sb-member-title' }, title),
+          h(
+            'span',
+            { className: 'dsh-sb-member-namewrap' },
+            h('span', { className: 'dsh-sb-member-title' }, title),
+            wsLabel !== ''
+              ? h('span', { className: 'dsh-sb-ws', title: `工作区：${row.cwd ?? wsLabel}` }, wsLabel)
+              : null,
+          ),
           h('span', { className: 'dsh-sb-when' }, formatAgo(at, now)),
         ),
         onRemove
@@ -1073,6 +1128,7 @@ window.__ModuleLoader__.load({
         onDelete,
         onRemoveMember,
         onDropSession,
+        wsOf,
         pseudo = false,
       } = props
 
@@ -1206,6 +1262,7 @@ window.__ModuleLoader__.load({
                   row: member.row,
                   bucket: member.bucket,
                   now,
+                  wsLabel: typeof wsOf === 'function' ? wsOf(member.row) : '',
                   onOpen: () => onOpen(member.id),
                   onRemove: null,
                 }),
@@ -1237,6 +1294,7 @@ window.__ModuleLoader__.load({
                       row: member.row,
                       bucket: member.bucket,
                       now,
+                      wsLabel: typeof wsOf === 'function' ? wsOf(member.row) : '',
                       onOpen: () => onOpen(member.id),
                       onRemove: pseudo ? null : () => onRemoveMember(group.id, member.id),
                     }),
@@ -1342,9 +1400,13 @@ window.__ModuleLoader__.load({
       const active = usePanelInfo((info) => info?.activePanelId === PANEL_ID)
       const statuses = useSessionStatus((value) => value)
 
-      // 看板一激活就撤掉 host 注入的首屏遮罩（两段式淡出）。
-      React.useEffect(() => {
-      }, [active])
+      // 工作区：会话行后面要显示它属于哪个工作区。
+      // 快照字段名随宿主版本略有差异，统一交给 buildWorkspaceLookup 兼容。
+      const workspaceSnapshot = useWorkspaces((state) => state)
+      const wsOf = React.useMemo(
+        () => buildWorkspaceLookup(workspaceRowsOf(workspaceSnapshot)),
+        [workspaceSnapshot],
+      )
       // 归档是工作区层的状态：SessionSummary 里没有，只能从 useWorkspaces 的快照拿。
       const archivedIds = useWorkspaces((state) => state?.archivedSessionIds ?? EMPTY_ARCHIVED)
       const archived = React.useMemo(
@@ -1734,6 +1796,7 @@ window.__ModuleLoader__.load({
                             onRename: renameGroup,
                             onDelete: () => removeGroup(entry.group.id),
                             onRemoveMember: removeFromGroup,
+                            wsOf,
                             onDropSession: (groupId, sessionId) => {
                               // 拖进去之后钉住"展开"，否则会话从「未分组」消失、
                               // 组卡又收起，看起来就像丢了一样。
@@ -1798,6 +1861,7 @@ window.__ModuleLoader__.load({
                           onRename: null,
                           onDelete: null,
                           onRemoveMember: null,
+                          wsOf,
                           onDropSession: null,
                         }),
                       ),
