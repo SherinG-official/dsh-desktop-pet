@@ -895,16 +895,6 @@ window.__ModuleLoader__.load({
      * 重命名会话：走宿主的 remote.session.rename（和侧边栏右键改名同一条链路）。
      * 宿主会自己校验标题、写入 title projection，我们不需要手动刷新列表。
      */
-    /** 给可能永远不 resolve 的宿主调用加个上限，避免「点了没动静」。 */
-    function withTimeout(promise, ms) {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`调用超过 ${ms}ms 未返回`)), ms)
-        }),
-      ])
-    }
-
     async function renameSession(sessionId, title) {
       const ctx = pluginCtx
       const failures = []
@@ -913,11 +903,11 @@ window.__ModuleLoader__.load({
       const remote = ctx?.remote?.session ?? ctx?.get?.('remote')?.session
       if (remote !== undefined && remote !== null && typeof remote.rename === 'function') {
         try {
-          const result = await withTimeout(remote.rename({ sessionId, title }), 4000)
+          const result = await remote.rename({ sessionId, title })
           if (result === undefined || result === null || result.ok !== false) return { ok: true }
           failures.push(result.error?.message ?? 'remote 拒绝')
         } catch (error) {
-          failures.push(`remote：${error?.message ?? String(error)}`)
+          failures.push(error?.message ?? String(error))
         }
       } else {
         failures.push('没有 remote.session')
@@ -928,13 +918,13 @@ window.__ModuleLoader__.load({
       if (sessions !== undefined && sessions !== null) {
         try {
           if (typeof sessions.rename === 'function') {
-            const result = await withTimeout(sessions.rename(sessionId, title), 4000)
+            const result = await sessions.rename(sessionId, title)
             if (result === undefined || result === null || result.ok !== false) return { ok: true }
             failures.push(result.error?.message ?? 'sessions.rename 拒绝')
           } else if (typeof sessions.session === 'function') {
             const handle = sessions.session(sessionId)
             if (handle && typeof handle.rename === 'function') {
-              const result = await withTimeout(handle.rename(title), 4000)
+              const result = await handle.rename(title)
               if (result === undefined || result === null || result.ok !== false) return { ok: true }
               failures.push(result.error?.message ?? 'session.rename 拒绝')
             } else {
@@ -944,7 +934,7 @@ window.__ModuleLoader__.load({
             failures.push('sessions 无 rename')
           }
         } catch (error) {
-          failures.push(`sessions：${error?.message ?? String(error)}`)
+          failures.push(error?.message ?? String(error))
         }
       } else {
         failures.push('没有 sessions 服务')
@@ -1119,15 +1109,9 @@ window.__ModuleLoader__.load({
           setDraft(title)
           return
         }
-        // 先收起编辑态：按钮要立刻有反馈，不能让用户觉得"点了没动静"。
-        setEditing(false)
         const result = await renameSession(id, next)
-        if (!result.ok) {
-          showToast(`重命名失败：${result.error}`)
-          // 失败时把输入恢复出来，方便改完重试。
-          setDraft(next)
-          setEditing(true)
-        }
+        setEditing(false)
+        if (!result.ok) showToast(`重命名失败：${result.error}`)
       }
 
       const cancel = () => {
