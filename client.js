@@ -226,7 +226,7 @@ window.__ModuleLoader__.load({
     `.trim()
 
     const SKINS = [
-      { id: 'whale', name: '鲸蓝娘', accent: '#3b6ff0', tagline: '鲸蓝实色 · 安静', material: 'solid', wallpaper: false, tokens: WHALE_TOKENS, css: '' },
+      { id: 'whale', name: '鲸蓝娘', accent: '#3b6ff0', tagline: '鲸蓝实色 · 安静', material: 'solid', tokens: WHALE_TOKENS, css: '' },
       {
         id: 'glass',
         name: '液态玻璃',
@@ -240,12 +240,12 @@ window.__ModuleLoader__.load({
         id: 'fairy',
         name: 'Fairy',
         accent: '#ff7ad9',
-        tagline: '终端风 · 洋红/青 · 壁纸适配',
+        tagline: '终端风 · 洋红/青 · 等宽',
         material: 'terminal',
         tokens: FAIRY_TOKENS,
         css: FAIRY_CSS,
       },
-      { id: 'native', name: '原生', accent: '', tagline: '宿主默认外观', material: 'native', wallpaper: false, tokens: null, css: '' },
+      { id: 'native', name: '原生', accent: '', tagline: '宿主默认外观', material: 'native', tokens: null, css: '' },
     ]
 
     /* ---- 工作组（host 持久化） ------------------------------------------ */
@@ -619,13 +619,8 @@ window.__ModuleLoader__.load({
       '.dsh-sb-headbtn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}',
       '.dsh-sb-headbtn:active{transform:translateY(.5px)}',
       /* ---- 壁纸层：整站铺底 + 暗纱 + 让宿主的不透明面板透出来 ---- */
-      'html[data-dsh-sb-wallpaper="on"] body{background-image:var(--dsh-sb-wallpaper-url,none);background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat}',
       // 关键：宿主把底色画在 --dsw-alias-bg-base 上（很多层都用它）。把变量本身改成半透明，
       // 比逐个类名覆盖可靠；`!important` 优先于主题的内联变量。
-      'html[data-dsh-sb-wallpaper="on"]{--dsw-alias-bg-base:rgba(8,10,18,.38)!important}',
-      'html[data-dsh-sb-wallpaper="on"] body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(6,9,18,.42),rgba(6,9,18,.62))}',
-      'html[data-dsh-sb-wallpaper="on"] [class*="_frame"],html[data-dsh-sb-wallpaper="on"] [class*="_centerCol"],html[data-dsh-sb-wallpaper="on"] [class*="_sidebarCol"]{background:transparent!important}',
-      'html[data-dsh-sb-wallpaper="on"] [data-composer-card]{background-color:color-mix(in srgb,var(--dsw-alias-bg-layer-1) 86%,transparent)}',
       // 右侧面板容器：占满可用高度、窄宽度下按单列排。
       '.dsh-sb-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:auto}',
       '.dsh-sb-pane .dsh-sb-board{flex-direction:column;overflow:visible}',
