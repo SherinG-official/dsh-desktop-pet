@@ -892,19 +892,50 @@ window.__ModuleLoader__.load({
      */
     async function renameSession(sessionId, title) {
       const ctx = pluginCtx
+      const failures = []
+
+      // ① 宿主 remote 端点（侧边栏右键改名走的就是这条）
       const remote = ctx?.remote?.session ?? ctx?.get?.('remote')?.session
-      if (remote === undefined || remote === null || typeof remote.rename !== 'function') {
-        return { ok: false, error: '当前宿主没有开放重命名接口' }
-      }
-      try {
-        const result = await remote.rename({ sessionId, title })
-        if (result !== undefined && result !== null && result.ok === false) {
-          return { ok: false, error: result.error?.message ?? '重命名失败' }
+      if (remote !== undefined && remote !== null && typeof remote.rename === 'function') {
+        try {
+          const result = await remote.rename({ sessionId, title })
+          if (result === undefined || result === null || result.ok !== false) return { ok: true }
+          failures.push(result.error?.message ?? 'remote 拒绝')
+        } catch (error) {
+          failures.push(error?.message ?? String(error))
         }
-        return { ok: true }
-      } catch (error) {
-        return { ok: false, error: error?.message ?? String(error) }
+      } else {
+        failures.push('没有 remote.session')
       }
+
+      // ② 客户端 sessions 服务（宿主 UI 自己的控制器）
+      const sessions = ctx?.get?.('sessions') ?? ctx?.sessions
+      if (sessions !== undefined && sessions !== null) {
+        try {
+          if (typeof sessions.rename === 'function') {
+            const result = await sessions.rename(sessionId, title)
+            if (result === undefined || result === null || result.ok !== false) return { ok: true }
+            failures.push(result.error?.message ?? 'sessions.rename 拒绝')
+          } else if (typeof sessions.session === 'function') {
+            const handle = sessions.session(sessionId)
+            if (handle && typeof handle.rename === 'function') {
+              const result = await handle.rename(title)
+              if (result === undefined || result === null || result.ok !== false) return { ok: true }
+              failures.push(result.error?.message ?? 'session.rename 拒绝')
+            } else {
+              failures.push('sessions 无 rename')
+            }
+          } else {
+            failures.push('sessions 无 rename')
+          }
+        } catch (error) {
+          failures.push(error?.message ?? String(error))
+        }
+      } else {
+        failures.push('没有 sessions 服务')
+      }
+
+      return { ok: false, error: failures.join('；') }
     }
 
     /** 打开右侧面板的「会话进程」tab（不切主面板、不影响当前会话）。 */
