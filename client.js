@@ -32,16 +32,14 @@ window.__ModuleLoader__.load({
     const PET_ROUTE = '/api/session-board/pet/'
     /** 桌宠自己的控制路由：/dsh-desktop-pet?action=status|toggle。 */
     const PET_CONTROL = '/dsh-desktop-pet'
-    /** 工作中的会话：只显示最近 1 天内有活动的。 */
-    const ACTIVE_WINDOW_MS = 1 * 24 * 60 * 60 * 1000
     /** 空闲 / 结束 的分界线：7 天内动过的算「空闲」。 */
     const IDLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
     /** 已结束 / 更早 的分界线：30 天内动过的算「已结束」。 */
     const ENDED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 
     const BUCKETS = [
-      { key: 'waiting', label: '等你回答', hint: '会话卡在审批或提问上，进去回一句它就能继续（只显示 1 天内的）' },
-      { key: 'working', label: '工作中', hint: '当前正在跑的会话（只显示 1 天内的）' },
+      { key: 'waiting', label: '等你回答', hint: '会话卡在审批或提问上，进去回一句它就能继续' },
+      { key: 'working', label: '工作中', hint: '当前正在跑的会话' },
       { key: 'idle', label: '闲置', hint: '没在跑，但 7 天内动过' },
       { key: 'ended', label: '结束', hint: '没在跑，最近活动在 7 天到 30 天之间' },
       { key: 'older', label: '更早', hint: '超过 30 天没动（默认收起）' },
@@ -327,12 +325,13 @@ window.__ModuleLoader__.load({
      * 工作组默认**不展开**（用户要的是"别每次都多点一下"，不是把整组摊开）。
      * 折叠时只把「刚刚有动静的会话」作为预览行露出来（见 GroupCard 的 peek）。
      *
+     * 预览窗口 = 1 天：刚跑完的会话在工作台外面就能看到，不用先点开分组。
      * 为什么用时间而不是桶：一条会话停下来后先落进 idle（7 天内），
-     * 7 天后才变 ended —— 只判 ended 会让 3 分钟前刚跑完的组什么都看不到。
+     * 7 天后才变 ended —— 只判 ended 会让几分钟前刚跑完的组什么都看不到。
      */
-    const FRESH_MS = 15 * 60 * 1000
+    const FRESH_MS = 24 * 60 * 60 * 1000
 
-    /** 折叠卡片上要露出来的成员：正在跑 / 等你回答 / 最近 15 分钟内有活动。 */
+    /** 折叠卡片上要露出来的成员：正在跑 / 等你回答 / 最近 1 天内有活动。 */
     function freshMembers(members, now) {
       return members.filter((member) => {
         if (member.bucket === 'waiting' || member.bucket === 'working') return true
@@ -812,11 +811,12 @@ window.__ModuleLoader__.load({
       if (isSubagentRow(row)) return null
 
       const pending = status && typeof status === 'object' ? status.pendingInteraction : undefined
+      if (pending) return 'waiting'
+      if (row.running === true) return 'working'
+
       const at = Number.isFinite(row.updatedAt) ? row.updatedAt : 0
-      const age = at === 0 ? Number.POSITIVE_INFINITY : now - at
-      // 工作中的会话只保留 1 天：超过就归到「结束」，避免僵尸会话一直占着在跑列。
-      if (pending) return age <= ACTIVE_WINDOW_MS ? 'waiting' : 'ended'
-      if (row.running === true) return age <= ACTIVE_WINDOW_MS ? 'working' : 'ended'
+      if (at === 0) return 'older'
+      const age = now - at
       if (age <= IDLE_WINDOW_MS) return 'idle'
       if (age <= ENDED_WINDOW_MS) return 'ended'
       return 'older'
