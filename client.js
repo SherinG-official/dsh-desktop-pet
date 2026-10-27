@@ -905,18 +905,6 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    /** 宿主返回值的统一判定：只有明确 ok === true 才算成功，undefined/nil 一律当失败。 */
-    function accepted(result) {
-      if (result !== null && typeof result === 'object' && result.ok === true) return { ok: true }
-      const detail =
-        result === undefined || result === null
-          ? '返回为空'
-          : typeof result === 'object' && result.ok === false
-            ? result.error?.message ?? result.error?.code ?? '被拒绝'
-            : `返回 ${typeof result}`
-      return { ok: false, detail }
-    }
-
     async function renameSession(sessionId, title) {
       const ctx = pluginCtx
       const failures = []
@@ -926,9 +914,8 @@ window.__ModuleLoader__.load({
       if (remote !== undefined && remote !== null && typeof remote.rename === 'function') {
         try {
           const result = await withTimeout(remote.rename({ sessionId, title }), 4000)
-          const verdict = accepted(result)
-          if (verdict.ok) return verdict
-          failures.push(`remote：${verdict.detail}`)
+          if (result === undefined || result === null || result.ok !== false) return { ok: true }
+          failures.push(result.error?.message ?? 'remote 拒绝')
         } catch (error) {
           failures.push(`remote：${error?.message ?? String(error)}`)
         }
@@ -941,15 +928,15 @@ window.__ModuleLoader__.load({
       if (sessions !== undefined && sessions !== null) {
         try {
           if (typeof sessions.rename === 'function') {
-            const verdict = accepted(await withTimeout(sessions.rename(sessionId, title), 4000))
-            if (verdict.ok) return verdict
-            failures.push(`sessions.rename：${verdict.detail}`)
+            const result = await withTimeout(sessions.rename(sessionId, title), 4000)
+            if (result === undefined || result === null || result.ok !== false) return { ok: true }
+            failures.push(result.error?.message ?? 'sessions.rename 拒绝')
           } else if (typeof sessions.session === 'function') {
             const handle = sessions.session(sessionId)
             if (handle && typeof handle.rename === 'function') {
-              const verdict = accepted(await withTimeout(handle.rename(title), 4000))
-              if (verdict.ok) return verdict
-              failures.push(`session.rename：${verdict.detail}`)
+              const result = await withTimeout(handle.rename(title), 4000)
+              if (result === undefined || result === null || result.ok !== false) return { ok: true }
+              failures.push(result.error?.message ?? 'session.rename 拒绝')
             } else {
               failures.push('sessions 无 rename')
             }
