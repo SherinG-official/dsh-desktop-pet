@@ -32,17 +32,19 @@ window.__ModuleLoader__.load({
     const PET_ROUTE = '/api/session-board/pet/'
     /** 桌宠自己的控制路由：/dsh-desktop-pet?action=status|toggle。 */
     const PET_CONTROL = '/dsh-desktop-pet'
-    /** 24 小时：闲置 / 结束 的分界线。 */
-    const IDLE_WINDOW_MS = 24 * 60 * 60 * 1000
-    /** 7 天：结束 / 更早 的分界线（更早默认收起）。 */
-    const ARCHIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+    /** 工作中的会话：只显示最近 1 天内有活动的。 */
+    const ACTIVE_WINDOW_MS = 1 * 24 * 60 * 60 * 1000
+    /** 空闲 / 结束 的分界线：7 天内动过的算「空闲」。 */
+    const IDLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+    /** 已结束 / 更早 的分界线：30 天内动过的算「已结束」。 */
+    const ENDED_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 
     const BUCKETS = [
-      { key: 'waiting', label: '等你回答', hint: '会话卡在审批或提问上，进去回一句它就能继续' },
-      { key: 'working', label: '工作中', hint: '当前正在跑的会话' },
-      { key: 'idle', label: '闲置', hint: '没在跑，但 24 小时内动过' },
-      { key: 'ended', label: '结束', hint: '没在跑，且超过 24 小时没动' },
-      { key: 'older', label: '更早', hint: '超过 7 天没动（默认收起）' },
+      { key: 'waiting', label: '等你回答', hint: '会话卡在审批或提问上，进去回一句它就能继续（只显示 1 天内的）' },
+      { key: 'working', label: '工作中', hint: '当前正在跑的会话（只显示 1 天内的）' },
+      { key: 'idle', label: '闲置', hint: '没在跑，但 7 天内动过' },
+      { key: 'ended', label: '结束', hint: '没在跑，最近活动在 7 天到 30 天之间' },
+      { key: 'older', label: '更早', hint: '超过 30 天没动（默认收起）' },
     ]
 
     /* ------------------------------------------------------------------ */
@@ -304,11 +306,11 @@ window.__ModuleLoader__.load({
     const GROUP_BUCKETS = [
       { key: 'waiting', label: '等你回答', hint: '组里有会话卡在等你' },
       { key: 'working', label: '进行中', hint: '组里有会话正在跑' },
-      { key: 'idle', label: '空闲', hint: '组里最近的活动在 24 小时内' },
-      { key: 'ended', label: '已结束', hint: '组里最近的活动在 24 小时到 7 天之间' },
-      // ⚠️ older 必须在这里：否则「组里最急的会话超过 7 天」的组会被算进一个
+      { key: 'idle', label: '空闲', hint: '组里最近的活动在 7 天内' },
+      { key: 'ended', label: '已结束', hint: '组里最近的活动在 7 天到 30 天之间' },
+      // ⚠️ older 必须在这里：否则「组里最急的会话超过 30 天」的组会被算进一个
       // 没有对应列的桶，整张组卡直接不渲染 —— 表现就是"拖进组之后消失了"。
-      { key: 'older', label: '更早', hint: '组里最近的活动超过 7 天' },
+      { key: 'older', label: '更早', hint: '组里最近的活动超过 30 天' },
       { key: 'empty', label: '空工作组', hint: '还没有会话，把会话拖进来' },
     ]
 
@@ -325,8 +327,8 @@ window.__ModuleLoader__.load({
      * 工作组默认**不展开**（用户要的是"别每次都多点一下"，不是把整组摊开）。
      * 折叠时只把「刚刚有动静的会话」作为预览行露出来（见 GroupCard 的 peek）。
      *
-     * 为什么用时间而不是桶：一条会话停下来后先落进 idle（24 小时内），
-     * 24 小时后才变 ended —— 只判 ended 会让 3 分钟前刚跑完的组什么都看不到。
+     * 为什么用时间而不是桶：一条会话停下来后先落进 idle（7 天内），
+     * 7 天后才变 ended —— 只判 ended 会让 3 分钟前刚跑完的组什么都看不到。
      */
     const FRESH_MS = 15 * 60 * 1000
 
@@ -810,13 +812,13 @@ window.__ModuleLoader__.load({
       if (isSubagentRow(row)) return null
 
       const pending = status && typeof status === 'object' ? status.pendingInteraction : undefined
-      if (pending) return 'waiting'
-      if (row.running === true) return 'working'
-
       const at = Number.isFinite(row.updatedAt) ? row.updatedAt : 0
-      if (at === 0) return 'older'
-      if (now - at <= IDLE_WINDOW_MS) return 'idle'
-      if (now - at <= ARCHIVE_WINDOW_MS) return 'ended'
+      const age = at === 0 ? Number.POSITIVE_INFINITY : now - at
+      // 工作中的会话只保留 1 天：超过就归到「结束」，避免僵尸会话一直占着在跑列。
+      if (pending) return age <= ACTIVE_WINDOW_MS ? 'waiting' : 'ended'
+      if (row.running === true) return age <= ACTIVE_WINDOW_MS ? 'working' : 'ended'
+      if (age <= IDLE_WINDOW_MS) return 'idle'
+      if (age <= ENDED_WINDOW_MS) return 'ended'
       return 'older'
     }
 
@@ -1536,7 +1538,7 @@ window.__ModuleLoader__.load({
         const ungrouped = []
         for (const bucket of BUCKETS) {
           // 重要：**更早的会话不再默认隐藏**。看板的用途是回看进度，
-          // 7 天前的会话仍然有价值（本机 127 个会话里有 90+ 个超过 7 天）。
+          // 30 天前的会话仍然有价值（本机 127 个会话里有 90+ 个超过 30 天）。
           for (const entry of buckets[bucket.key] ?? []) {
             if (grouped.has(entry.id)) continue
             if (needle !== '') {
@@ -1686,7 +1688,7 @@ window.__ModuleLoader__.load({
             'span',
             { className: 'dsh-sb-sub' },
             `共 ${total} 个会话（宿主送到客户端的）· ${view.groups.length} 个工作组 · 未分组 ${view.ungrouped.length}` +
-              (counts.older > 0 ? ` · 其中 ${counts.older} 个超过 7 天` : '') +
+              (counts.older > 0 ? ` · 其中 ${counts.older} 个超过 30 天` : '') +
               (total - matched > 0 ? ` · ${total - matched} 个已归档/空白/子代理会话不展示` : '') +
               ' · 皮肤在「设置 → 皮肤」里切',
           ),
