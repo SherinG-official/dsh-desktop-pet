@@ -291,7 +291,9 @@ $DSH_HOME/dsh-session-board/skins-state.json     # { active: '<皮肤 id>' }
 ## 开发
 
 ```powershell
-npm run test:no-spawn   # 43 个测试：模型 / 存储 / 工作项路由 / 桌宠立绘 / 皮肤仓库
+npm test           # 57 个测试：模型 / 存储 / 路由 / 桌宠 / 皮肤 / 工作组
+npm run test:node  # 走 node 内置 runner（≈ 同一批用例）
 ```
 
-`node --test tests/` 在受限沙箱里会因 `spawn EPERM` 失败（测试跑器为每个文件开子进程）。
+`node --test tests/` 会为每个文件开子进程，在受限沙箱里报 `spawn EPERM`；
+所以 `npm test` 直接串行跑各文件，不依赖 spawn。

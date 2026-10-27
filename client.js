@@ -767,13 +767,6 @@ window.__ModuleLoader__.load({
       return formatDate(ms)
     }
 
-    /** cwd 的末段，卡片上显示成"在哪个目录干的"。 */
-    function workspaceName(cwd) {
-      if (typeof cwd !== 'string' || cwd.trim() === '') return ''
-      const parts = cwd.split(/[\\/]+/).filter(Boolean)
-      return parts.length === 0 ? cwd : parts[parts.length - 1]
-    }
-
     /* ------------------------------------------------------------------ */
     /* 会话分类                                                            */
     /* ------------------------------------------------------------------ */
@@ -2104,11 +2097,16 @@ window.__ModuleLoader__.load({
         // B：切会话时宿主会清掉 tab，订阅到消失就立刻补回。
         // 只在「刚在看板里点了会话」的 2 秒窗口期内生效，避免和用户主动关闭打架。
         scoped.effect(() => {
-          let present = false
+          const hasTab = () => typeof tabs.get === 'function' && tabs.get(TAB_KIND) !== undefined
+          // 订阅那一刻 tab 可能已经在（热重载/重进页面），先按现状初始化，
+          // 否则第一次被宿主清掉时 present=false，会漏补。
+          let present = hasTab()
+          let reopens = 0
           return tabs.subscribe(() => {
-            const open = typeof tabs.get === 'function' && tabs.get(TAB_KIND) !== undefined
+            const open = hasTab()
             if (open) {
               present = true
+              reopens = 0
               return
             }
             if (!present) return
@@ -2116,10 +2114,16 @@ window.__ModuleLoader__.load({
               present = false
               return
             }
+            // 防御：如果宿主反复清理，最多补 3 次，避免和我们自己打架。
+            if (reopens >= 3) {
+              present = false
+              return
+            }
             const sidebar = ctx.get?.('sidebarRight') ?? ctx.sidebarRight
             if (sidebar && typeof sidebar.openTab === 'function') {
               try {
                 sidebar.openTab(TAB_KIND)
+                reopens += 1
               } catch {
                 /* 忽略 */
               }
