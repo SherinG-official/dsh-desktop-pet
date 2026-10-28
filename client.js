@@ -671,6 +671,12 @@ window.__ModuleLoader__.load({
       '.dsh-sb-pane .dsh-sb-board{flex:0 0 auto;align-content:flex-start}',
       '.dsh-sb-pane .dsh-sb-col{flex:1 1 0;min-width:200px;width:auto}',
       '.dsh-sb-pane .dsh-sb-col-ungrouped{flex:1 1 100%;width:100%;margin-top:12px}',
+      /* 滚动：看板本体原来是 height:100% + overflow:hidden，内容一高就被裁掉、
+         外层 pane 反而没有溢出可滚。这里改成“内容多高就多高”，让 pane 自己滚。 */
+      '.dsh-sb-pane .dsh-sb{height:auto;min-height:100%;overflow:visible}',
+      '.dsh-sb-pane .dsh-sb-head{position:sticky;top:0;z-index:2;background:var(--dsw-alias-bg-base)}',
+      '.dsh-sb-pane .dsh-sb-col-body{overflow:visible;min-height:0}',
+      '.dsh-sb-pane{overflow-y:auto;overscroll-behavior:contain}',
       '.dsh-sb-toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:2147483000;background:#7a1f2b;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;line-height:1.6;max-width:70vw;white-space:pre-wrap;box-shadow:0 12px 30px -12px rgba(0,0,0,.6)}',
       // 底部细条：只在侧边栏折叠时出现；不覆盖任何控件（在布局流里）。
       // 展开时：侧边栏底部设置旁边（原生 footer action 的尺寸约束下尽量紧凑）。
