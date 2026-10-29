@@ -915,7 +915,8 @@ window.__ModuleLoader__.load({
         guide: [
           {
             id: 'open',
-            order: 40,
+            // 放在「开始」页第一位（宿主内置项：工作区文件 10、终端 20、浏览器 30）。
+            order: 5,
             title: () => '会话进程',
             description: () => '查看所有会话的工作进度',
           },
