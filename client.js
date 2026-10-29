@@ -901,9 +901,26 @@ window.__ModuleLoader__.load({
     const TAB_ID = 'dsh-session-board'
     const TAB_KIND = 'session-board'
 
-    /** tab 类型定义：类型必须**立即**注册，打开逻辑不能等 body 挂载。 */
+    /**
+     * tab 类型定义：类型必须**立即**注册，打开逻辑不能等 body 挂载。
+     * `guide` 是「开始」页（空白会话）里的入口卡片：宿主的 Right Guide 会把
+     * 每个注册了 guide 的类型列成一张卡（工作区文件 / 新建终端 / 浏览器 …）。
+     */
     function boardTabDefinition() {
-      return { id: TAB_ID, kind: TAB_KIND, priority: 'extension', title: () => '会话进程' }
+      return {
+        id: TAB_ID,
+        kind: TAB_KIND,
+        priority: 'extension',
+        title: () => '会话进程',
+        guide: [
+          {
+            id: 'open',
+            order: 40,
+            title: () => '会话进程',
+            description: () => '查看所有会话的工作进度',
+          },
+        ],
+      }
     }
 
     /** 打开右侧面板的「会话进程」tab（不切主面板、不影响当前会话）。 */
